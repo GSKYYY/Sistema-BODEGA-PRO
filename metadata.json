@@ -1,0 +1,5 @@
+{
+  "name": "Sistema Bodega Pro",
+  "description": "A professional Point of Sale (POS) and Inventory Management System designed for small to medium businesses. Features include inventory tracking, sales history, client credit management (fiado), multi-currency support (USD/BS), and real-time dashboard analytics.",
+  "requestFramePermissions": []
+}
