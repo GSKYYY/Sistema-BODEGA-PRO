@@ -89,7 +89,7 @@ export const POS: React.FC = () => {
           totalBs,
           exchangeRate: config.exchangeRate,
           paymentMethod: paymentMethod as any,
-          clientId: selectedClient || undefined,
+          clientId: selectedClient,
           items: cart,
           taxAmount
         });

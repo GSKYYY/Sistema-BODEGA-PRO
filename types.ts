@@ -58,7 +58,7 @@ export interface Sale {
   totalBs: number;
   exchangeRate: number;
   paymentMethod: 'cash_usd' | 'cash_bs' | 'cash_cop' | 'mobile_pay' | 'transfer' | 'card' | 'credit';
-  clientId?: string;
+  clientId?: string | null;
   items: CartItem[];
   taxAmount?: number;
 }

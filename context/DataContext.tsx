@@ -105,8 +105,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         // Fetch user role from Firestore
-        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        const userData = userDoc.data();
+        let userData: any = null;
+        try {
+            const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+            userData = userDoc.exists() ? userDoc.data() : null;
+        } catch (e) {
+            console.warn("Failed to fetch user data, falling back to basic auth", e);
+        }
         
         setUser({
           uid: firebaseUser.uid,
@@ -242,7 +247,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
         // 3. Create Sale Document
         const newSaleRef = doc(collection(db, 'sales'));
-        transaction.set(newSaleRef, { ...sale, id: newSaleRef.id });
+        
+        // Remove undefined keys to ensure Firestore compatibility
+        const saleData = { ...sale, id: newSaleRef.id };
+        (Object.keys(saleData) as (keyof typeof saleData)[]).forEach(key => {
+            if (saleData[key] === undefined) delete saleData[key];
+        });
+
+        transaction.set(newSaleRef, saleData);
 
         // 4. Update Client Debt if credit
         if (sale.paymentMethod === 'credit' && sale.clientId) {
