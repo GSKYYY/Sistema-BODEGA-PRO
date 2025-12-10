@@ -134,35 +134,45 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const unsubProducts = onSnapshot(collection(db, 'products'), (snap) => {
       setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Product)));
-    });
+    }, (error) => console.error("Error loading products:", error));
 
     const unsubCategories = onSnapshot(collection(db, 'categories'), (snap) => {
       setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() } as Category)));
-    });
+    }, (error) => console.error("Error loading categories:", error));
 
     // Order sales by date desc
     const qSales = query(collection(db, 'sales'), orderBy('date', 'desc'));
     const unsubSales = onSnapshot(qSales, (snap) => {
       setSales(snap.docs.map(d => ({ id: d.id, ...d.data() } as Sale)));
-    });
+    }, (error) => console.error("Error loading sales:", error));
 
     const unsubClients = onSnapshot(collection(db, 'clients'), (snap) => {
       setClients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
-    });
+    }, (error) => console.error("Error loading clients:", error));
 
-    const unsubSuppliers = onSnapshot(collection(db, 'suppliers'), (snap) => {
-      setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Supplier)));
-    });
+    // FIX: Conditional Subscription for Suppliers (Only Owner can read)
+    // This prevents the "Missing or insufficient permissions" error for employees
+    let unsubSuppliers = () => {};
+    if (user.role === 'owner') {
+        unsubSuppliers = onSnapshot(collection(db, 'suppliers'), (snap) => {
+            setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Supplier)));
+        }, (error) => {
+            console.warn("Access to suppliers denied or failed:", error);
+            setSuppliers([]); // Graceful fallback
+        });
+    } else {
+        setSuppliers([]);
+    }
 
     const unsubExpenses = onSnapshot(collection(db, 'expenses'), (snap) => {
       setExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() } as Expense)));
-    });
+    }, (error) => console.error("Error loading expenses:", error));
 
     const unsubConfig = onSnapshot(doc(db, 'config', 'main'), (snap) => {
       if (snap.exists()) {
         setConfig({ ...INITIAL_CONFIG, ...snap.data() });
       }
-    });
+    }, (error) => console.error("Error loading config:", error));
 
     return () => {
       unsubProducts();
@@ -248,10 +258,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         // 3. Create Sale Document
         const newSaleRef = doc(collection(db, 'sales'));
         
-        // Remove undefined keys to ensure Firestore compatibility
+        // FIX: Remove undefined keys to ensure Firestore compatibility
+        // Firestore cannot handle 'undefined' values, so we delete them.
         const saleData = { ...sale, id: newSaleRef.id };
         (Object.keys(saleData) as (keyof typeof saleData)[]).forEach(key => {
-            if (saleData[key] === undefined) delete saleData[key];
+            if ((saleData as any)[key] === undefined) {
+                delete (saleData as any)[key];
+            }
         });
 
         transaction.set(newSaleRef, saleData);
@@ -301,7 +314,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         
         transaction.update(clientRef, { debt: newDebt });
         
-        // Optional: Create a payment record in a separate collection
+        // Optional: Create a payment record
         const paymentRef = doc(collection(db, 'client_payments'));
         transaction.set(paymentRef, {
             clientId,
@@ -356,9 +369,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // --- BULK OPERATIONS ---
   const clearSalesHistory = async () => {
-    // In Firestore, deleting collections is tricky. We'll simulate by querying all and batch deleting.
-    // NOTE: This handles small datasets. For large ones, use a Cloud Function.
-    const snap = await getDoc(doc(db, 'config', 'main')); // Dummy await
     showNotification('Contacte soporte para borrado masivo en nube', 'warning');
   };
 
