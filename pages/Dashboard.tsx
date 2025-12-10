@@ -1,8 +1,9 @@
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { DollarSign, Package, AlertTriangle, TrendingUp, Trophy, TrendingDown, MinusCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { MathUtils } from '../utils/math';
 
 const StatCard: React.FC<{ title: string; value: string; subValue?: React.ReactNode; icon: any; color: string }> = ({ title, value, subValue, icon: Icon, color }) => (
   <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-start justify-between hover:shadow-md transition-shadow">
@@ -26,17 +27,19 @@ export const Dashboard: React.FC = () => {
   // Calculate Stats
   const today = new Date().toISOString().split('T')[0];
   const salesToday = sales.filter(s => s.date.startsWith(today));
-  const totalSalesToday = salesToday.reduce((sum, s) => sum + s.totalUsd, 0);
-  const totalBsToday = totalSalesToday * config.exchangeRate;
-  const totalCopToday = totalSalesToday * config.copExchangeRate;
+  
+  // Use MathUtils for precise aggregation
+  const totalSalesToday = salesToday.reduce((sum, s) => MathUtils.add(sum, s.totalUsd), 0);
+  const totalBsToday = MathUtils.mul(totalSalesToday, config.exchangeRate);
+  const totalCopToday = MathUtils.mul(totalSalesToday, config.copExchangeRate);
   
   const profitToday = salesToday.reduce((total, sale) => {
-    const saleCost = sale.items.reduce((cost, item) => cost + (item.costPrice * item.quantity), 0);
-    return total + (sale.totalUsd - saleCost);
+    const saleCost = sale.items.reduce((cost, item) => MathUtils.add(cost, MathUtils.mul(item.costPrice, item.quantity)), 0);
+    return MathUtils.add(total, MathUtils.sub(sale.totalUsd, saleCost));
   }, 0);
 
-  const profitBsToday = profitToday * config.exchangeRate;
-  const profitCopToday = profitToday * config.copExchangeRate;
+  const profitBsToday = MathUtils.mul(profitToday, config.exchangeRate);
+  const profitCopToday = MathUtils.mul(profitToday, config.copExchangeRate);
 
   const lowStockProducts = products.filter(p => p.stock <= p.minStock && p.status === 'active');
 
@@ -45,7 +48,9 @@ export const Dashboard: React.FC = () => {
     const d = new Date();
     d.setDate(d.getDate() - (6 - i));
     const dateStr = d.toISOString().split('T')[0];
-    const daySales = sales.filter(s => s.date.startsWith(dateStr)).reduce((sum, s) => sum + s.totalUsd, 0);
+    const daySales = sales
+        .filter(s => s.date.startsWith(dateStr))
+        .reduce((sum, s) => MathUtils.add(sum, s.totalUsd), 0);
     return {
       name: d.toLocaleDateString('es-ES', { weekday: 'short' }),
       ventas: daySales
@@ -198,7 +203,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      {/* Product Performance Section (New) */}
+      {/* Product Performance Section */}
       {showStats && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             

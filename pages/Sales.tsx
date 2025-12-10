@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { Sale, CartItem } from '../types';
-import { X, Eye, TrendingUp, DollarSign, Calendar, Printer } from 'lucide-react';
+import { Sale } from '../types';
+import { X, Eye, TrendingUp, Printer } from 'lucide-react';
+import { MathUtils } from '../utils/math';
 
 export const Sales: React.FC = () => {
   const { sales, clients, config } = useData();
@@ -21,11 +22,13 @@ export const Sales: React.FC = () => {
         case 'cash_cop': return 'Efectivo COP';
         case 'mobile_pay': return 'Pago Móvil';
         case 'credit': return 'Fiado';
+        case 'transfer': return 'Transferencia';
+        case 'card': return 'Punto';
         default: return method;
     }
   };
 
-  // Analytics Calculation
+  // Analytics Calculation using MathUtils
   const stats = useMemo(() => {
     const now = new Date();
     const filteredSales = sales.filter(sale => {
@@ -43,11 +46,11 @@ export const Sales: React.FC = () => {
       }
     });
 
-    const totalRevenue = filteredSales.reduce((sum, s) => sum + s.totalUsd, 0);
+    const totalRevenue = filteredSales.reduce((sum, s) => MathUtils.add(sum, s.totalUsd), 0);
     const totalCost = filteredSales.reduce((sum, s) => {
-      return sum + s.items.reduce((cost, item) => cost + (item.costPrice * item.quantity), 0);
+      return MathUtils.add(sum, s.items.reduce((cost, item) => MathUtils.add(cost, MathUtils.mul(item.costPrice, item.quantity)), 0));
     }, 0);
-    const totalProfit = totalRevenue - totalCost;
+    const totalProfit = MathUtils.sub(totalRevenue, totalCost);
     const count = filteredSales.length;
 
     return { totalRevenue, totalCost, totalProfit, count };
@@ -110,8 +113,8 @@ export const Sales: React.FC = () => {
                 <div className="flex flex-col items-center">
                     <h3 className="text-2xl font-bold text-gray-800">${stats.totalRevenue.toFixed(2)}</h3>
                     <div className="text-xs text-gray-400 mt-1 space-y-0.5">
-                        <p>Bs. {(stats.totalRevenue * config.exchangeRate).toFixed(2)}</p>
-                        {config.showCop && <p>COP {(stats.totalRevenue * config.copExchangeRate).toLocaleString('es-CO')}</p>}
+                        <p>Bs. {MathUtils.mul(stats.totalRevenue, config.exchangeRate).toFixed(2)}</p>
+                        {config.showCop && <p>COP {MathUtils.mul(stats.totalRevenue, config.copExchangeRate).toLocaleString('es-CO')}</p>}
                     </div>
                 </div>
                 <p className="text-xs text-gray-400 mt-2">{stats.count} transacciones</p>
@@ -121,8 +124,8 @@ export const Sales: React.FC = () => {
                 <div className="flex flex-col items-center">
                     <h3 className="text-2xl font-bold text-gray-500">${stats.totalCost.toFixed(2)}</h3>
                      <div className="text-xs text-gray-400 mt-1 space-y-0.5">
-                        <p>Bs. {(stats.totalCost * config.exchangeRate).toFixed(2)}</p>
-                        {config.showCop && <p>COP {(stats.totalCost * config.copExchangeRate).toLocaleString('es-CO')}</p>}
+                        <p>Bs. {MathUtils.mul(stats.totalCost, config.exchangeRate).toFixed(2)}</p>
+                        {config.showCop && <p>COP {MathUtils.mul(stats.totalCost, config.copExchangeRate).toLocaleString('es-CO')}</p>}
                     </div>
                 </div>
             </div>
@@ -131,8 +134,8 @@ export const Sales: React.FC = () => {
                 <div className="flex flex-col items-center">
                     <h3 className="text-3xl font-bold text-green-700">${stats.totalProfit.toFixed(2)}</h3>
                      <div className="text-xs text-green-600/70 mt-1 space-y-0.5">
-                        <p>Bs. {(stats.totalProfit * config.exchangeRate).toFixed(2)}</p>
-                        {config.showCop && <p>COP {(stats.totalProfit * config.copExchangeRate).toLocaleString('es-CO')}</p>}
+                        <p>Bs. {MathUtils.mul(stats.totalProfit, config.exchangeRate).toFixed(2)}</p>
+                        {config.showCop && <p>COP {MathUtils.mul(stats.totalProfit, config.copExchangeRate).toLocaleString('es-CO')}</p>}
                     </div>
                 </div>
                 <p className="text-xs text-green-600 mt-2">Margen: {stats.totalRevenue > 0 ? ((stats.totalProfit / stats.totalRevenue) * 100).toFixed(1) : 0}%</p>
@@ -235,7 +238,7 @@ export const Sales: React.FC = () => {
                                     <td className="p-3 text-gray-800">{item.name}</td>
                                     <td className="p-3 text-center text-gray-600">{item.quantity}</td>
                                     <td className="p-3 text-right text-gray-600">${item.salePrice.toFixed(2)}</td>
-                                    <td className="p-3 text-right font-medium text-gray-800">${(item.salePrice * item.quantity).toFixed(2)}</td>
+                                    <td className="p-3 text-right font-medium text-gray-800">${MathUtils.mul(item.salePrice, item.quantity).toFixed(2)}</td>
                                 </tr>
                             ))}
                         </tbody>
@@ -253,7 +256,7 @@ export const Sales: React.FC = () => {
                     </div>
                      <div className="flex justify-between text-sm text-gray-500">
                         <span>Equivalente en COP</span>
-                        <span>COP {(selectedSale.totalUsd * config.copExchangeRate).toLocaleString('es-CO')}</span>
+                        <span>COP {MathUtils.mul(selectedSale.totalUsd, config.copExchangeRate).toLocaleString('es-CO')}</span>
                     </div>
                 </div>
             </div>

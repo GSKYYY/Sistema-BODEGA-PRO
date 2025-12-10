@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { DataProvider, useData } from './context/DataContext';
 import { Sidebar } from './components/Sidebar';
@@ -29,8 +29,12 @@ const Layout: React.FC<{ children: React.ReactNode; title: string }> = ({ childr
 );
 
 const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { user } = useData();
+    const { user, loading } = useData();
     const location = useLocation();
+
+    if (loading) {
+        return <div className="h-screen flex items-center justify-center bg-gray-50 text-gray-400">Cargando sesión...</div>;
+    }
 
     if (!user || !user.isAuthenticated) {
         return <Navigate to="/login" state={{ from: location }} replace />;
@@ -40,10 +44,10 @@ const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 const MainApp: React.FC = () => {
-  const [loading, setLoading] = useState(true);
+  const [showSplash, setShowSplash] = useState(true);
 
-  if (loading) {
-    return <SplashScreen onFinish={() => setLoading(false)} />;
+  if (showSplash) {
+    return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
 
   return (

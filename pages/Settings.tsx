@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useData } from '../context/DataContext';
-import { Save, RefreshCw, Trash2, Plus, Lock, Layout, Shield, Tag, Server, Download, FileText, Gift, Percent, AlertTriangle, Box, Printer, Database } from 'lucide-react';
+import { Save, RefreshCw, Trash2, Plus, Lock, Layout, Shield, Tag, Server, Download, Box, Printer, Database, Gift, Percent } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 export const Settings: React.FC = () => {
@@ -17,6 +17,11 @@ export const Settings: React.FC = () => {
   const [resetStep, setResetStep] = useState(0); // 0: initial, 1: confirm, 2: input validation
   const [resetInput, setResetInput] = useState('');
   const [resetAction, setResetAction] = useState<'full' | 'sales' | 'expenses' | null>(null);
+
+  useEffect(() => {
+    // Update local config when remote config changes
+    setLocalConfig(config);
+  }, [config]);
 
   useEffect(() => {
     if (user?.role === 'employee') {
@@ -205,7 +210,7 @@ export const Settings: React.FC = () => {
             </div>
         )}
 
-        {/* TAB: OPERATIONS (NEW) */}
+        {/* TAB: OPERATIONS */}
         {activeTab === 'operations' && (
             <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100 animate-in fade-in duration-300">
                 <div className="flex items-start gap-4 mb-6">

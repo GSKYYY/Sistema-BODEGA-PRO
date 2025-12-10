@@ -1,14 +1,23 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useData } from '../context/DataContext';
 import { Supplier } from '../types';
 import { Search, Plus, Edit, Trash2, X, Truck, MapPin, Phone, Mail } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export const Suppliers: React.FC = () => {
-  const { suppliers, addSupplier, updateSupplier, deleteSupplier, config } = useData();
+  const { suppliers, addSupplier, updateSupplier, deleteSupplier, config, user } = useData();
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
+  const navigate = useNavigate();
+
+  // Protect Route
+  useEffect(() => {
+    if (user?.role === 'employee') {
+        navigate('/');
+    }
+  }, [user, navigate]);
 
   const initialFormState: Omit<Supplier, 'id'> = {
     name: '',
@@ -62,6 +71,8 @@ export const Suppliers: React.FC = () => {
     };
     return colors[config.theme] || 'bg-blue-600 hover:bg-blue-700';
   };
+
+  if (user?.role === 'employee') return null;
 
   return (
     <div className="p-8">

@@ -4,6 +4,7 @@ import { useData } from '../context/DataContext';
 import { Expense } from '../types';
 import { Plus, Trash2, Wallet, ArrowDownCircle, ArrowUpCircle, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { MathUtils } from '../utils/math';
 
 export const CashBox: React.FC = () => {
   const { sales, expenses, addExpense, deleteExpense, config, user } = useData();
@@ -19,7 +20,7 @@ export const CashBox: React.FC = () => {
 
   // Permissions for specific actions
   const canDelete = user?.role === 'owner' || config.permissions.canDeleteItems;
-  const canViewStats = user?.role === 'owner'; // Only owner sees full financial breakdown
+  const canViewStats = user?.role === 'owner';
 
   // Initial state for expense form
   const [expenseForm, setExpenseForm] = useState<Omit<Expense, 'id' | 'date'>>({
@@ -33,19 +34,19 @@ export const CashBox: React.FC = () => {
   const todaySales = sales.filter(s => s.date.startsWith(today));
   const todayExpenses = expenses.filter(e => e.date.startsWith(today));
 
-  // Totals Calculation
+  // Totals Calculation using MathUtils
   const salesByMethod = {
-    cash_usd: todaySales.filter(s => s.paymentMethod === 'cash_usd').reduce((sum, s) => sum + s.totalUsd, 0),
-    cash_bs: todaySales.filter(s => s.paymentMethod === 'cash_bs').reduce((sum, s) => sum + s.totalUsd, 0),
-    cash_cop: todaySales.filter(s => s.paymentMethod === 'cash_cop').reduce((sum, s) => sum + s.totalUsd, 0),
-    mobile_pay: todaySales.filter(s => s.paymentMethod === 'mobile_pay').reduce((sum, s) => sum + s.totalUsd, 0),
-    transfer: todaySales.filter(s => s.paymentMethod === 'transfer').reduce((sum, s) => sum + s.totalUsd, 0),
-    card: todaySales.filter(s => s.paymentMethod === 'card').reduce((sum, s) => sum + s.totalUsd, 0),
+    cash_usd: todaySales.filter(s => s.paymentMethod === 'cash_usd').reduce((sum, s) => MathUtils.add(sum, s.totalUsd), 0),
+    cash_bs: todaySales.filter(s => s.paymentMethod === 'cash_bs').reduce((sum, s) => MathUtils.add(sum, s.totalUsd), 0),
+    cash_cop: todaySales.filter(s => s.paymentMethod === 'cash_cop').reduce((sum, s) => MathUtils.add(sum, s.totalUsd), 0),
+    mobile_pay: todaySales.filter(s => s.paymentMethod === 'mobile_pay').reduce((sum, s) => MathUtils.add(sum, s.totalUsd), 0),
+    transfer: todaySales.filter(s => s.paymentMethod === 'transfer').reduce((sum, s) => MathUtils.add(sum, s.totalUsd), 0),
+    card: todaySales.filter(s => s.paymentMethod === 'card').reduce((sum, s) => MathUtils.add(sum, s.totalUsd), 0),
   };
 
-  const totalSalesUsd = Object.values(salesByMethod).reduce((a, b) => a + b, 0);
-  const totalExpensesUsd = todayExpenses.reduce((sum, e) => sum + e.amount, 0);
-  const netBalance = totalSalesUsd - totalExpensesUsd;
+  const totalSalesUsd = Object.values(salesByMethod).reduce((a, b) => MathUtils.add(a, b), 0);
+  const totalExpensesUsd = todayExpenses.reduce((sum, e) => MathUtils.add(sum, e.amount), 0);
+  const netBalance = MathUtils.sub(totalSalesUsd, totalExpensesUsd);
 
   const handleSubmitExpense = (e: React.FormEvent) => {
     e.preventDefault();
@@ -97,8 +98,8 @@ export const CashBox: React.FC = () => {
                     <p className="text-gray-500 text-sm">Ventas Totales</p>
                     <h3 className="text-2xl font-bold text-green-600">${totalSalesUsd.toFixed(2)}</h3>
                     <div className="text-xs text-gray-400">
-                        <span>Bs. {(totalSalesUsd * config.exchangeRate).toFixed(2)}</span>
-                        {config.showCop && <span className="ml-2">COP {(totalSalesUsd * config.copExchangeRate).toLocaleString('es-CO')}</span>}
+                        <span>Bs. {MathUtils.mul(totalSalesUsd, config.exchangeRate).toFixed(2)}</span>
+                        {config.showCop && <span className="ml-2">COP {MathUtils.mul(totalSalesUsd, config.copExchangeRate).toLocaleString('es-CO')}</span>}
                     </div>
                 </div>
                 <div className="bg-green-100 p-3 rounded-lg text-green-600">
@@ -110,8 +111,8 @@ export const CashBox: React.FC = () => {
                     <p className="text-gray-500 text-sm">Gastos Totales</p>
                     <h3 className="text-2xl font-bold text-red-600">${totalExpensesUsd.toFixed(2)}</h3>
                     <div className="text-xs text-gray-400">
-                        <span>Bs. {(totalExpensesUsd * config.exchangeRate).toFixed(2)}</span>
-                        {config.showCop && <span className="ml-2">COP {(totalExpensesUsd * config.copExchangeRate).toLocaleString('es-CO')}</span>}
+                        <span>Bs. {MathUtils.mul(totalExpensesUsd, config.exchangeRate).toFixed(2)}</span>
+                        {config.showCop && <span className="ml-2">COP {MathUtils.mul(totalExpensesUsd, config.copExchangeRate).toLocaleString('es-CO')}</span>}
                     </div>
                 </div>
                 <div className="bg-red-100 p-3 rounded-lg text-red-600">
@@ -123,8 +124,8 @@ export const CashBox: React.FC = () => {
                     <p className="text-gray-500 text-sm">Balance Neto</p>
                     <h3 className={`text-2xl font-bold ${netBalance >= 0 ? getThemeClass() : 'text-red-500'}`}>${netBalance.toFixed(2)}</h3>
                     <div className="text-xs text-gray-400">
-                        <span>Bs. {(netBalance * config.exchangeRate).toFixed(2)}</span>
-                        {config.showCop && <span className="ml-2">COP {(netBalance * config.copExchangeRate).toLocaleString('es-CO')}</span>}
+                        <span>Bs. {MathUtils.mul(netBalance, config.exchangeRate).toFixed(2)}</span>
+                        {config.showCop && <span className="ml-2">COP {MathUtils.mul(netBalance, config.copExchangeRate).toLocaleString('es-CO')}</span>}
                     </div>
                 </div>
                 <div className={`bg-gray-100 p-3 rounded-lg ${getThemeClass()}`}>
@@ -144,14 +145,14 @@ export const CashBox: React.FC = () => {
                         <span className="font-medium text-gray-600">Efectivo ($)</span>
                         <div className="text-right">
                             <span className="font-bold text-gray-800 block">${salesByMethod.cash_usd.toFixed(2)}</span>
-                            {config.showCop && <span className="text-xs text-gray-500">COP {(salesByMethod.cash_usd * config.copExchangeRate).toLocaleString('es-CO')}</span>}
+                            {config.showCop && <span className="text-xs text-gray-500">COP {MathUtils.mul(salesByMethod.cash_usd, config.copExchangeRate).toLocaleString('es-CO')}</span>}
                         </div>
                     </div>
                     <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                         <span className="font-medium text-gray-600">Efectivo (Bs)</span>
                         <div className="text-right">
                             <span className="font-bold text-gray-800 block">${salesByMethod.cash_bs.toFixed(2)}</span>
-                            <span className="text-xs text-gray-500">Bs. {(salesByMethod.cash_bs * config.exchangeRate).toFixed(2)}</span>
+                            <span className="text-xs text-gray-500">Bs. {MathUtils.mul(salesByMethod.cash_bs, config.exchangeRate).toFixed(2)}</span>
                         </div>
                     </div>
                     {config.showCop && (
@@ -159,7 +160,7 @@ export const CashBox: React.FC = () => {
                             <span className="font-medium text-gray-600">Efectivo (COP)</span>
                             <div className="text-right">
                                 <span className="font-bold text-gray-800 block">${salesByMethod.cash_cop.toFixed(2)}</span>
-                                <span className="text-xs text-gray-500">COP {(salesByMethod.cash_cop * config.copExchangeRate).toLocaleString('es-CO')}</span>
+                                <span className="text-xs text-gray-500">COP {MathUtils.mul(salesByMethod.cash_cop, config.copExchangeRate).toLocaleString('es-CO')}</span>
                             </div>
                         </div>
                     )}
@@ -167,21 +168,21 @@ export const CashBox: React.FC = () => {
                         <span className="font-medium text-gray-600">Pago Móvil</span>
                         <div className="text-right">
                             <span className="font-bold text-gray-800 block">${salesByMethod.mobile_pay.toFixed(2)}</span>
-                            <span className="text-xs text-gray-500">Bs. {(salesByMethod.mobile_pay * config.exchangeRate).toFixed(2)}</span>
+                            <span className="text-xs text-gray-500">Bs. {MathUtils.mul(salesByMethod.mobile_pay, config.exchangeRate).toFixed(2)}</span>
                         </div>
                     </div>
                     <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                         <span className="font-medium text-gray-600">Punto de Venta</span>
                         <div className="text-right">
                             <span className="font-bold text-gray-800 block">${salesByMethod.card.toFixed(2)}</span>
-                            <span className="text-xs text-gray-500">Bs. {(salesByMethod.card * config.exchangeRate).toFixed(2)}</span>
+                            <span className="text-xs text-gray-500">Bs. {MathUtils.mul(salesByMethod.card, config.exchangeRate).toFixed(2)}</span>
                         </div>
                     </div>
                 </div>
             </div>
         )}
 
-        {/* Expenses List - Visible to all so employee can see what they registered */}
+        {/* Expenses List - Visible to all */}
         <div className={`bg-white p-6 rounded-xl shadow-sm border border-gray-100 ${!canViewStats ? 'lg:col-span-2' : ''}`}>
             <h3 className="text-lg font-bold text-gray-800 mb-6">Gastos del Día</h3>
             <div className="space-y-3 max-h-80 overflow-y-auto pr-2">

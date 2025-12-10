@@ -1,13 +1,13 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useData } from '../context/DataContext';
-import { Store, User as UserIcon, Lock, ArrowRight, ShieldCheck, ArrowLeft, Briefcase, Key, Loader2, UserCircle2, Shield } from 'lucide-react';
+import { Store, User as UserIcon, Lock, ArrowLeft, Briefcase, Key, Loader2, UserCircle2, Shield, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
 
 export const Login: React.FC = () => {
-  const { config } = useData();
+  const { config, user } = useData();
   const navigate = useNavigate();
   
   // LOGIN STATE
@@ -19,13 +19,17 @@ export const Login: React.FC = () => {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Redirect when user state updates to authenticated
+  useEffect(() => {
+    if (user?.isAuthenticated) {
+      navigate('/');
+    }
+  }, [user, navigate]);
+
   const handleProfileSelect = (role: 'owner' | 'employee') => {
     setSelectedRole(role);
     setStep('form');
     setError('');
-    // Optional: Pre-fill email for convenience if you have standard emails
-    // if (role === 'owner') setEmail('admin@bodega.com');
-    // if (role === 'employee') setEmail('empleado@bodega.com');
     setEmail(''); // Clear for security
     setPassword('');
   };
@@ -36,9 +40,8 @@ export const Login: React.FC = () => {
     setError('');
 
     try {
-      await signInWithEmailAndPassword(auth, email, password);
-      // Auth listener in DataContext handles the redirect and role verification
-      navigate('/');
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+      // Navigation is handled by the useEffect above once state updates
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
@@ -48,8 +51,7 @@ export const Login: React.FC = () => {
       } else {
           setError('Error al iniciar sesión.');
       }
-    } finally {
-      setIsLoading(false);
+      setIsLoading(false); // Stop loading only on error
     }
   };
 
@@ -172,7 +174,9 @@ export const Login: React.FC = () => {
                         <div className="relative group">
                         <UserIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 group-focus-within:text-gray-800 transition-colors" size={20} />
                         <input 
-                            type="email" 
+                            type="text" 
+                            inputMode="email"
+                            autoCapitalize="none"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-100 rounded-xl focus:bg-white focus:border-gray-300 focus:ring-4 focus:ring-gray-100 outline-none transition-all font-medium text-gray-800 placeholder-gray-400"
