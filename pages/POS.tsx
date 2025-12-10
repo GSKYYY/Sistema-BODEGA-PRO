@@ -145,6 +145,11 @@ export const POS: React.FC = () => {
     return colors[config.theme] || 'bg-blue-600 hover:bg-blue-700';
   };
 
+  // Helper for receipt separator
+  const Separator = () => (
+    <div className="border-b border-black border-dashed my-2 w-full"></div>
+  );
+
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col md:flex-row overflow-hidden bg-gray-50">
       
@@ -428,48 +433,79 @@ export const POS: React.FC = () => {
                          Nueva Venta
                      </button>
 
-                     {/* Hidden Print Receipt Template */}
-                     <div className="hidden print-only receipt-print text-left" style={{ width: config.receipt.paperSize }}>
-                        <div className="text-center mb-4">
-                            <h2 className="text-xl font-bold uppercase">{config.businessName}</h2>
-                            <p className="text-sm">{config.address}</p>
-                            <p className="text-sm">Ticket: {lastSale?.number}</p>
-                            <p className="text-xs">{new Date().toLocaleString()}</p>
+                     {/* REAL THERMAL RECEIPT TEMPLATE - VISIBLE ONLY ON PRINT */}
+                     <div className="receipt-print" style={{ width: config.receipt.paperSize || '58mm' }}>
+                        <div style={{ textAlign: 'center', marginBottom: '10px' }}>
+                            <h2 style={{ fontSize: '1.2em', fontWeight: 'bold', margin: 0, textTransform: 'uppercase' }}>{config.businessName}</h2>
+                            <p style={{ margin: '2px 0', fontSize: '0.9em' }}>{config.address}</p>
+                            <Separator />
+                            <p style={{ margin: '2px 0' }}>TICKET: {lastSale?.number}</p>
+                            <p style={{ margin: '2px 0' }}>FECHA: {new Date().toLocaleString()}</p>
                         </div>
-                        <div className="mb-4">
-                            {config.receipt.headerText && <p className="text-xs text-center mb-2">{config.receipt.headerText}</p>}
-                            <table className="w-full text-xs">
-                                <thead>
-                                    <tr className="border-b border-black">
-                                        <th className="text-left py-1">Cant</th>
-                                        <th className="text-left py-1">Prod</th>
-                                        <th className="text-right py-1">Total</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {lastSale?.items.map((item, i) => (
-                                        <tr key={i}>
-                                            <td className="py-1">{item.quantity}</td>
-                                            <td className="py-1">{item.name}</td>
-                                            <td className="text-right py-1">${MathUtils.mul(item.quantity, item.salePrice).toFixed(2)}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                        
+                        <Separator />
+                        
+                        <div style={{ display: 'flex', fontWeight: 'bold', fontSize: '0.9em', marginBottom: '5px' }}>
+                            <span style={{ width: '15%' }}>CANT</span>
+                            <span style={{ flex: 1 }}>DESC</span>
+                            <span style={{ width: '25%', textAlign: 'right' }}>TOTAL</span>
                         </div>
-                        <div className="border-t border-black pt-2 text-right">
-                             {config.receipt.showTax && lastSale?.taxAmount ? (
-                                <p className="text-xs">Impuesto: ${lastSale.taxAmount.toFixed(2)}</p>
-                             ) : null}
-                             <p className="font-bold">Total: ${lastSale?.totalUsd.toFixed(2)}</p>
-                             <p className="text-xs">Bs. {lastSale?.totalBs.toFixed(2)}</p>
-                             {config.showCop && <p className="text-xs">COP {(MathUtils.mul(lastSale?.totalUsd || 0, config.copExchangeRate)).toLocaleString('es-CO')}</p>}
+                        
+                        <Separator />
+
+                        <div style={{ fontSize: '0.9em' }}>
+                            {lastSale?.items.map((item, i) => (
+                                <div key={i} style={{ display: 'flex', marginBottom: '4px' }}>
+                                    <span style={{ width: '15%', verticalAlign: 'top' }}>{item.quantity}</span>
+                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingRight: '5px' }}>
+                                        {item.name}
+                                    </span>
+                                    <span style={{ width: '25%', textAlign: 'right' }}>${MathUtils.mul(item.quantity, item.salePrice).toFixed(2)}</span>
+                                </div>
+                            ))}
                         </div>
+
+                        <Separator />
+
+                        <div style={{ textAlign: 'right', fontWeight: 'bold', fontSize: '1em' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span>SUBTOTAL:</span>
+                                <span>${(lastSale?.totalUsd - (lastSale?.taxAmount || 0)).toFixed(2)}</span>
+                            </div>
+                            {config.receipt.showTax && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>IVA/IMP:</span>
+                                    <span>${(lastSale?.taxAmount || 0).toFixed(2)}</span>
+                                </div>
+                            )}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2em', marginTop: '5px' }}>
+                                <span>TOTAL:</span>
+                                <span>${lastSale?.totalUsd.toFixed(2)}</span>
+                            </div>
+                            <div style={{ fontSize: '0.8em', fontWeight: 'normal', marginTop: '5px' }}>
+                                Bs. {lastSale?.totalBs.toFixed(2)}
+                                {config.showCop && <br/>}{config.showCop && `COP ${MathUtils.mul(lastSale?.totalUsd || 0, config.copExchangeRate).toLocaleString('es-CO')}`}
+                            </div>
+                        </div>
+
+                        <Separator />
+
+                        <div style={{ fontSize: '0.9em' }}>
+                            <p style={{ margin: '2px 0' }}>PAGO: <span style={{ textTransform: 'uppercase' }}>{lastSale?.paymentMethod}</span></p>
+                            {amountPaid && (
+                                <p style={{ margin: '2px 0' }}>CAMBIO: {paymentMethod === 'cash_usd' ? '$' : paymentMethod === 'cash_bs' ? 'Bs.' : 'COP'} {change > 0 ? change.toFixed(2) : '0.00'}</p>
+                            )}
+                        </div>
+
                         {config.receipt.footerText && (
-                            <div className="mt-4 text-center text-xs border-t border-black pt-2">
-                                {config.receipt.footerText}
+                            <div style={{ textAlign: 'center', marginTop: '15px', fontSize: '0.8em' }}>
+                                <p>{config.receipt.footerText}</p>
                             </div>
                         )}
+                        
+                        <div style={{ textAlign: 'center', marginTop: '15px' }}>
+                            <p style={{ fontSize: '0.8em' }}>*** GRACIAS POR SU COMPRA ***</p>
+                        </div>
                      </div>
                 </div>
             )}

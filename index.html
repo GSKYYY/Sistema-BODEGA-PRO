@@ -36,50 +36,47 @@
             z-index: 10;
         }
 
-        /* PRINT STYLES FOR PDF EXPORT */
+        /* ESTILOS DE IMPRESIÓN PROFESIONAL (TICKET TÉRMICO) */
         @media print {
-            @page { margin: 0.5cm; size: auto; }
-            body { background: white !important; color: black !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            
-            /* Hide UI elements */
-            .no-print, nav, aside, header, button, .toast-container, .scrollbar-hide::-webkit-scrollbar, .snowflake { 
-                display: none !important; 
+            /* 1. Ocultar todo por defecto */
+            body * {
+                visibility: hidden;
             }
 
-            /* Reset Layout */
-            #root, .flex, .flex-col, .flex-1, .min-h-screen, .ml-64 { 
-                display: block !important; 
-                margin: 0 !important; 
-                padding: 0 !important; 
-                width: 100% !important; 
-                height: auto !important;
-                overflow: visible !important;
-            }
-            
-            /* Show Print Only Elements */
-            .print-only { display: block !important; }
-            
-            /* Table Styling for Print */
-            table { width: 100% !important; border-collapse: collapse !important; font-size: 10pt; }
-            th, td { border: 1px solid #ddd !important; padding: 4px 8px !important; text-align: left; }
-            th { background-color: #f3f4f6 !important; font-weight: bold; }
-            
-            /* Cards to Flat */
-            .bg-white, .shadow-sm, .shadow-md, .rounded-xl { 
-                box-shadow: none !important; 
-                border: none !important; 
-                border-radius: 0 !important;
+            /* 2. Mostrar solo el contenedor del recibo */
+            .receipt-print, .receipt-print * {
+                visibility: visible;
             }
 
-            /* Receipt Specific */
+            /* 3. Posicionar el recibo al inicio absoluto del papel */
             .receipt-print {
-                width: 80mm !important;
-                margin: 0 auto !important;
-                font-family: 'Courier New', Courier, monospace;
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%; /* El ancho lo controla el estilo inline (58mm/80mm) */
+                margin: 0;
+                padding: 0;
+                background-color: white;
+                color: black;
+                font-family: 'Courier New', Courier, monospace !important; /* Fuente tipo ticket */
+                font-size: 12px;
+                line-height: 1.2;
+                display: block !important;
+            }
+
+            /* 4. Resetear margenes de página para impresoras térmicas */
+            @page {
+                margin: 0;
+                size: auto;
+            }
+
+            /* Ocultar elementos de UI específicos que puedan quedar */
+            nav, aside, header, .modal-overlay, .toast-container {
+                display: none !important;
             }
         }
         
-        .print-only { display: none; }
+        .receipt-print { display: none; } /* Oculto en pantalla normal */
     </style>
 <script type="importmap">
 {
