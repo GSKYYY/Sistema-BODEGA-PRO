@@ -31,7 +31,6 @@ export const Settings: React.FC = () => {
   const handleAddCategory = () => {
     if (!newCategoryName.trim()) return;
     addCategory({
-        id: Date.now(),
         name: newCategoryName,
         color: '#' + Math.floor(Math.random()*16777215).toString(16) // Random color
     });

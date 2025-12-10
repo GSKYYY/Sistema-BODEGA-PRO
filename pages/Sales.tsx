@@ -9,7 +9,7 @@ export const Sales: React.FC = () => {
   const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
   const [timeFilter, setTimeFilter] = useState<'day' | 'week' | 'month' | 'year'>('day');
 
-  const getClientName = (id?: number) => {
+  const getClientName = (id?: string) => {
     if (!id) return 'General';
     return clients.find(c => c.id === id)?.name || 'Desconocido';
   };

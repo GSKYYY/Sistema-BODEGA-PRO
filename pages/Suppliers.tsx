@@ -31,7 +31,7 @@ export const Suppliers: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: string) => {
     if (window.confirm('¿Seguro que desea eliminar este proveedor?')) {
       deleteSupplier(id);
     }
@@ -42,7 +42,7 @@ export const Suppliers: React.FC = () => {
     if (editingSupplier) {
       updateSupplier({ ...formData, id: editingSupplier.id });
     } else {
-      addSupplier({ ...formData, id: Date.now() });
+      addSupplier(formData);
     }
     setIsModalOpen(false);
     setEditingSupplier(null);

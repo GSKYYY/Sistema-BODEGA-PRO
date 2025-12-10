@@ -1,9 +1,9 @@
 
 export interface Product {
-  id: number;
+  id: string; // Firestore ID
   code: string;
   name: string;
-  categoryId: number;
+  categoryId: string; // Firestore ID
   costPrice: number;
   salePrice: number;
   stock: number;
@@ -13,26 +13,27 @@ export interface Product {
 }
 
 export interface Category {
-  id: number;
+  id: string; // Firestore ID
   name: string;
   color: string;
 }
 
 export interface CartItem extends Product {
   quantity: number;
+  priceAtSale: number; // Snapshot of price at moment of sale
 }
 
 export interface Client {
-  id: number;
+  id: string; // Firestore ID
   name: string;
-  identityCard: string; // Cedula
+  identityCard: string;
   phone: string;
   debt: number;
   creditLimit: number;
 }
 
 export interface Supplier {
-  id: number;
+  id: string;
   name: string;
   contact: string;
   phone: string;
@@ -41,7 +42,7 @@ export interface Supplier {
 }
 
 export interface Expense {
-  id: number;
+  id: string;
   description: string;
   amount: number;
   category: string;
@@ -50,16 +51,16 @@ export interface Expense {
 }
 
 export interface Sale {
-  id: string; // UUID
-  number: string; // Readable ID (e.g., V-001)
+  id: string;
+  number: string;
   date: string;
   totalUsd: number;
   totalBs: number;
   exchangeRate: number;
   paymentMethod: 'cash_usd' | 'cash_bs' | 'cash_cop' | 'mobile_pay' | 'transfer' | 'card' | 'credit';
-  clientId?: number;
+  clientId?: string;
   items: CartItem[];
-  taxAmount?: number; // New field for tax
+  taxAmount?: number;
 }
 
 export interface EmployeePermissions {
@@ -81,17 +82,14 @@ export interface ReceiptConfig {
 export interface AppConfig {
   businessName: string;
   address: string;
-  exchangeRate: number; // BS
-  copExchangeRate: number; // COP
+  exchangeRate: number;
+  copExchangeRate: number;
   currencySymbol: string;
   theme: string;
   showCop: boolean;
-  
-  // New Business Logic Fields
-  taxRate: number; // Percentage (e.g., 16)
-  enableNegativeStock: boolean; // Allow selling with 0 stock
-  lowStockThreshold: number; // Global default
-  
+  taxRate: number;
+  enableNegativeStock: boolean;
+  lowStockThreshold: number;
   permissions: EmployeePermissions;
   receipt: ReceiptConfig;
 }
@@ -104,7 +102,8 @@ export interface Notification {
 }
 
 export interface User {
-  username: string;
+  uid: string;
+  email: string;
   name: string;
   role: 'owner' | 'employee';
   isAuthenticated: boolean;

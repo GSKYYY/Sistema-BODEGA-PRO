@@ -2,19 +2,22 @@
 import React, { useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { Product, CartItem, Sale } from '../types';
-import { Search, Plus, Minus, Trash2, CreditCard, ShoppingBag, ShoppingCart, CheckCircle, Printer, X, AlertOctagon } from 'lucide-react';
+import { MathUtils } from '../utils/math';
+import { Search, Plus, Minus, Trash2, CreditCard, ShoppingBag, ShoppingCart, CheckCircle, Printer, X, AlertOctagon, Loader2 } from 'lucide-react';
 
 export const POS: React.FC = () => {
   const { products, categories, config, addSale, clients, showNotification } = useData();
   const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null); // Changed to string
   const [cart, setCart] = useState<CartItem[]>([]);
+  
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  
   const [amountPaid, setAmountPaid] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<string>('cash_usd');
-  const [selectedClient, setSelectedClient] = useState<number | null>(null);
+  const [selectedClient, setSelectedClient] = useState<string | null>(null); // Changed to string
   
-  // Success/Receipt State
   const [lastSale, setLastSale] = useState<Sale | null>(null);
   const [checkoutSuccess, setCheckoutSuccess] = useState(false);
 
@@ -28,7 +31,6 @@ export const POS: React.FC = () => {
   }, [products, search, selectedCategory]);
 
   const addToCart = (product: Product) => {
-    // Negative Stock Logic
     if (!config.enableNegativeStock && product.stock <= 0) {
         showNotification('Stock insuficiente y ventas negativas desactivadas', 'error');
         return;
@@ -37,23 +39,20 @@ export const POS: React.FC = () => {
     setCart(prev => {
       const existing = prev.find(item => item.id === product.id);
       if (existing) {
-        // Check stock again for existing items
         if (!config.enableNegativeStock && existing.quantity >= product.stock) {
              showNotification('No hay más stock disponible', 'warning');
              return prev;
         }
         return prev.map(item => item.id === product.id ? { ...item, quantity: item.quantity + 1 } : item);
       }
-      return [...prev, { ...product, quantity: 1 }];
+      return [...prev, { ...product, quantity: 1, priceAtSale: product.salePrice }];
     });
   };
 
-  const updateQuantity = (id: number, delta: number) => {
+  const updateQuantity = (id: string, delta: number) => { // id is string
     setCart(prev => prev.map(item => {
       if (item.id === id) {
         const newQty = Math.max(0, item.quantity + delta);
-        
-        // Check stock limit if negative stock is disabled
         if (!config.enableNegativeStock && delta > 0 && newQty > item.stock) {
              return item;
         }
@@ -63,41 +62,53 @@ export const POS: React.FC = () => {
     }).filter(item => item.quantity > 0));
   };
 
-  const removeFromCart = (id: number) => {
+  const removeFromCart = (id: string) => { // id is string
     setCart(prev => prev.filter(item => item.id !== id));
   };
 
-  // Calculations
-  const subtotalUsd = cart.reduce((sum, item) => sum + (item.salePrice * item.quantity), 0);
-  const taxAmount = config.taxRate > 0 ? subtotalUsd * (config.taxRate / 100) : 0;
-  const totalUsd = subtotalUsd + taxAmount;
+  // Calculations using MathUtils
+  const subtotalUsd = cart.reduce((sum, item) => MathUtils.add(sum, MathUtils.mul(item.salePrice, item.quantity)), 0);
+  const taxAmount = config.taxRate > 0 ? MathUtils.percent(subtotalUsd, config.taxRate) : 0;
+  const totalUsd = MathUtils.add(subtotalUsd, taxAmount);
   
-  const totalBs = totalUsd * config.exchangeRate;
-  const totalCop = totalUsd * config.copExchangeRate;
+  const totalBs = MathUtils.mul(totalUsd, config.exchangeRate);
+  const totalCop = MathUtils.mul(totalUsd, config.copExchangeRate);
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cart.length === 0) return;
+    setIsProcessing(true);
     
-    // Simple ID generation for demo
-    const saleId = 'V-' + Date.now().toString().slice(-6);
+    // Generate readable ID client-side (server transaction will handle safety)
+    const saleNumber = 'V-' + Date.now().toString().slice(-6);
     
-    const newSale: Sale = {
-      id: crypto.randomUUID(),
-      number: saleId,
-      date: new Date().toISOString(),
-      totalUsd,
-      totalBs,
-      exchangeRate: config.exchangeRate,
-      paymentMethod: paymentMethod as any,
-      clientId: selectedClient || undefined,
-      items: cart,
-      taxAmount
-    };
+    try {
+        await addSale({
+          number: saleNumber,
+          date: new Date().toISOString(),
+          totalUsd,
+          totalBs,
+          exchangeRate: config.exchangeRate,
+          paymentMethod: paymentMethod as any,
+          clientId: selectedClient || undefined,
+          items: cart,
+          taxAmount
+        });
 
-    addSale(newSale);
-    setLastSale(newSale);
-    setCheckoutSuccess(true);
-    setCart([]);
+        // Store for receipt
+        setLastSale({
+          id: 'temp', 
+          number: saleNumber,
+          date: new Date().toISOString(),
+          totalUsd, totalBs, exchangeRate: config.exchangeRate, paymentMethod: paymentMethod as any, items: cart, taxAmount
+        });
+        
+        setCheckoutSuccess(true);
+        setCart([]);
+    } catch (error) {
+        // Error is handled in context notifications
+    } finally {
+        setIsProcessing(false);
+    }
   };
 
   const resetCheckout = () => {
@@ -112,13 +123,27 @@ export const POS: React.FC = () => {
 
   const calculateChange = () => {
     const paid = parseFloat(amountPaid) || 0;
-    if (paymentMethod === 'cash_usd') return paid - totalUsd;
-    if (paymentMethod === 'cash_bs') return paid - totalBs;
-    if (paymentMethod === 'cash_cop') return paid - totalCop;
+    if (paymentMethod === 'cash_usd') return MathUtils.sub(paid, totalUsd);
+    if (paymentMethod === 'cash_bs') return MathUtils.sub(paid, totalBs);
+    if (paymentMethod === 'cash_cop') return MathUtils.sub(paid, totalCop);
     return 0;
   };
 
   const change = calculateChange();
+
+  // Button Class Helper
+  const getButtonClass = () => {
+    const colors: Record<string, string> = {
+        blue: 'bg-blue-600 hover:bg-blue-700',
+        emerald: 'bg-emerald-600 hover:bg-emerald-700',
+        violet: 'bg-violet-600 hover:bg-violet-700',
+        orange: 'bg-orange-600 hover:bg-orange-700',
+        rose: 'bg-rose-600 hover:bg-rose-700',
+        slate: 'bg-slate-600 hover:bg-slate-700',
+        christmas: 'bg-green-600 hover:bg-green-700 border-b-2 border-red-600',
+    };
+    return colors[config.theme] || 'bg-blue-600 hover:bg-blue-700';
+  };
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col md:flex-row overflow-hidden bg-gray-50">
@@ -255,7 +280,7 @@ export const POS: React.FC = () => {
             <button 
                 onClick={() => setIsCheckoutOpen(true)}
                 disabled={cart.length === 0}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white py-3 rounded-lg font-bold text-lg shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2"
+                className={`w-full text-white py-3 rounded-lg font-bold text-lg shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2 disabled:bg-gray-300 disabled:cursor-not-allowed ${getButtonClass()}`}
             >
                 <CreditCard size={20} />
                 Cobrar
@@ -271,9 +296,9 @@ export const POS: React.FC = () => {
             {!checkoutSuccess ? (
                 // Checkout Form
                 <>
-                    <div className="bg-blue-600 p-4 text-white flex justify-between items-center">
+                    <div className="bg-gray-800 p-4 text-white flex justify-between items-center">
                         <h3 className="text-lg font-bold">Confirmar Pago</h3>
-                        <button onClick={() => setIsCheckoutOpen(false)} className="hover:bg-blue-700 rounded p-1"><X size={20} /></button>
+                        <button onClick={() => setIsCheckoutOpen(false)} className="hover:bg-gray-700 rounded p-1"><X size={20} /></button>
                     </div>
                     <div className="p-6 space-y-4">
                         <div className="text-center mb-6">
@@ -311,7 +336,7 @@ export const POS: React.FC = () => {
                                 <select 
                                     className="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     value={selectedClient || ''}
-                                    onChange={(e) => setSelectedClient(parseInt(e.target.value))}
+                                    onChange={(e) => setSelectedClient(e.target.value)}
                                 >
                                     <option value="">Seleccionar Cliente...</option>
                                     {clients.map(c => (
@@ -353,10 +378,10 @@ export const POS: React.FC = () => {
                         </button>
                         <button 
                             onClick={handleCheckout}
-                            disabled={paymentMethod === 'credit' && !selectedClient}
-                            className="flex-1 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm disabled:bg-gray-400"
+                            disabled={isProcessing || (paymentMethod === 'credit' && !selectedClient)}
+                            className={`flex-1 py-2 text-white font-medium rounded-lg shadow-sm disabled:bg-gray-400 flex items-center justify-center gap-2 ${getButtonClass()}`}
                         >
-                            Confirmar
+                            {isProcessing ? <Loader2 className="animate-spin" size={20}/> : 'Confirmar'}
                         </button>
                     </div>
                 </>
@@ -426,7 +451,7 @@ export const POS: React.FC = () => {
                                         <tr key={i}>
                                             <td className="py-1">{item.quantity}</td>
                                             <td className="py-1">{item.name}</td>
-                                            <td className="text-right py-1">${(item.quantity * item.salePrice).toFixed(2)}</td>
+                                            <td className="text-right py-1">${MathUtils.mul(item.quantity, item.salePrice).toFixed(2)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
@@ -438,7 +463,7 @@ export const POS: React.FC = () => {
                              ) : null}
                              <p className="font-bold">Total: ${lastSale?.totalUsd.toFixed(2)}</p>
                              <p className="text-xs">Bs. {lastSale?.totalBs.toFixed(2)}</p>
-                             {config.showCop && <p className="text-xs">COP {(lastSale?.totalUsd * config.copExchangeRate).toLocaleString('es-CO')}</p>}
+                             {config.showCop && <p className="text-xs">COP {(MathUtils.mul(lastSale?.totalUsd || 0, config.copExchangeRate)).toLocaleString('es-CO')}</p>}
                         </div>
                         {config.receipt.footerText && (
                             <div className="mt-4 text-center text-xs border-t border-black pt-2">

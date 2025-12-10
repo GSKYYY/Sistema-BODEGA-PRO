@@ -54,7 +54,7 @@ export const Dashboard: React.FC = () => {
 
   // Product Performance Calculation
   const productPerformance = useMemo(() => {
-    const salesMap = new Map<number, number>();
+    const salesMap = new Map<string, number>();
     
     // Initialize all active products with 0 sales
     products.filter(p => p.status === 'active').forEach(p => {

@@ -50,7 +50,6 @@ export const CashBox: React.FC = () => {
   const handleSubmitExpense = (e: React.FormEvent) => {
     e.preventDefault();
     addExpense({
-        id: Date.now(),
         date: new Date().toISOString(),
         ...expenseForm
     });

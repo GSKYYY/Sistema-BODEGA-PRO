@@ -41,7 +41,7 @@ export const Clients: React.FC = () => {
 
   // Filter excluding General Client
   const filteredClients = clients.filter(c => 
-    c.id !== 1 && 
+    c.id !== '1' && 
     (c.name.toLowerCase().includes(search.toLowerCase()) || 
     c.phone.includes(search) || 
     c.identityCard?.includes(search))
@@ -53,7 +53,7 @@ export const Clients: React.FC = () => {
     setIsFormOpen(true);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: string) => {
     if (window.confirm('¿Seguro que desea eliminar este cliente?')) {
       deleteClient(id);
     }
@@ -70,7 +70,7 @@ export const Clients: React.FC = () => {
     if (editingClient) {
       updateClient({ ...formData, id: editingClient.id });
     } else {
-      addClient({ ...formData, id: Date.now() });
+      addClient(formData);
     }
     setIsFormOpen(false);
     setEditingClient(null);

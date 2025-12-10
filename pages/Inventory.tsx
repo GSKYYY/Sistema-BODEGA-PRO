@@ -17,7 +17,7 @@ export const Inventory: React.FC = () => {
   const initialFormState: Omit<Product, 'id'> = {
     code: '',
     name: '',
-    categoryId: 1,
+    categoryId: '',
     costPrice: 0,
     salePrice: 0,
     stock: 0,
@@ -45,7 +45,7 @@ export const Inventory: React.FC = () => {
     setShowCalculator(false);
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = (id: string) => {
     if (window.confirm('¿Seguro que desea eliminar este producto?')) {
       deleteProduct(id);
     }
@@ -63,7 +63,7 @@ export const Inventory: React.FC = () => {
     if (editingProduct) {
       updateProduct({ ...finalData, id: editingProduct.id });
     } else {
-      addProduct({ ...finalData, id: Date.now() });
+      addProduct(finalData);
     }
     setIsModalOpen(false);
     setEditingProduct(null);
@@ -220,7 +220,8 @@ export const Inventory: React.FC = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
-                  <select className="w-full p-2 border rounded-lg" value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: parseInt(e.target.value)})}>
+                  <select className="w-full p-2 border rounded-lg" value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
+                    <option value="">Seleccione Categoría</option>
                     {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </select>
                 </div>
