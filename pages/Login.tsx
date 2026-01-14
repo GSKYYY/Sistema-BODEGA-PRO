@@ -1,17 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
 import { useData } from '../context/DataContext';
-import { Store, User as UserIcon, Lock, ArrowLeft, Briefcase, Key, Loader2, UserCircle2, Shield, ShieldCheck } from 'lucide-react';
+import { Store, User as UserIcon, Lock, ArrowLeft, Key, Loader2, UserCircle2, Shield, ShieldCheck, Zap, LogIn } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '../firebaseConfig';
 
 export const Login: React.FC = () => {
-  const { config, user } = useData();
+  const { config, user, loginDemo } = useData();
   const navigate = useNavigate();
   
   // LOGIN STATE
-  const [step, setStep] = useState<'profile' | 'form'>('profile');
+  const [step, setStep] = useState<'selection' | 'form'>('selection');
   const [selectedRole, setSelectedRole] = useState<'owner' | 'employee' | null>(null);
   
   const [email, setEmail] = useState('');
@@ -26,12 +26,16 @@ export const Login: React.FC = () => {
     }
   }, [user, navigate]);
 
-  const handleProfileSelect = (role: 'owner' | 'employee') => {
+  const handleLoginSelect = (role: 'owner' | 'employee') => {
     setSelectedRole(role);
     setStep('form');
     setError('');
-    setEmail(''); // Clear for security
+    setEmail('');
     setPassword('');
+  };
+
+  const handleDemoLogin = (role: 'owner' | 'employee') => {
+      loginDemo(role);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -41,7 +45,6 @@ export const Login: React.FC = () => {
 
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
-      // Navigation is handled by the useEffect above once state updates
     } catch (err: any) {
       console.error(err);
       if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
@@ -49,13 +52,12 @@ export const Login: React.FC = () => {
       } else if (err.code === 'auth/too-many-requests') {
           setError('Demasiados intentos. Espere un momento.');
       } else {
-          setError('Error al iniciar sesión.');
+          setError('Error de conexión. Intente el Modo Demo.');
       }
-      setIsLoading(false); // Stop loading only on error
+      setIsLoading(false);
     }
   };
 
-  // Helper for gradients based on theme
   const getGradient = () => {
     const gradients: Record<string, string> = {
       blue: 'from-blue-600 to-indigo-900',
@@ -86,7 +88,6 @@ export const Login: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4 font-sans relative overflow-hidden">
       <div className={`absolute top-0 left-0 w-full h-full bg-gradient-to-br ${getGradient()}`}></div>
       
-      {/* Snowfall Effect for Christmas Theme */}
       {config.theme === 'christmas' && (
         <>
             {[...Array(20)].map((_, i) => (
@@ -106,7 +107,7 @@ export const Login: React.FC = () => {
         </>
       )}
 
-      <div className="max-w-4xl w-full relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-500">
+      <div className="max-w-5xl w-full relative z-10 animate-in fade-in slide-in-from-bottom-8 duration-500">
         <div className="text-center mb-8">
             <div className="inline-flex w-20 h-20 bg-white rounded-3xl shadow-xl items-center justify-center mb-6 transform rotate-3 hover:rotate-0 transition-transform duration-300">
                <Store size={40} className="text-gray-800" />
@@ -115,44 +116,96 @@ export const Login: React.FC = () => {
             <p className="text-white/80 text-lg font-medium">{config.businessName}</p>
         </div>
 
-        {/* STEP 1: PROFILE SELECTION */}
-        {step === 'profile' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-2xl mx-auto">
-                {/* OWNER CARD */}
+        {step === 'selection' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+                {/* 1. Login Dueño */}
                 <button 
-                    onClick={() => handleProfileSelect('owner')}
-                    className="group bg-white/95 hover:bg-white backdrop-blur-sm p-8 rounded-3xl shadow-2xl transition-all hover:scale-105 hover:shadow-blue-500/20 text-left border-2 border-transparent hover:border-blue-500 flex flex-col items-center text-center gap-4"
+                    onClick={() => handleLoginSelect('owner')}
+                    className="group bg-white/95 hover:bg-white backdrop-blur-sm p-6 rounded-2xl shadow-xl transition-all hover:-translate-y-1 hover:shadow-2xl text-center border-2 border-transparent hover:border-blue-500 flex flex-col items-center gap-4 h-full"
                 >
-                    <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                        <Shield size={40} />
+                    <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors shadow-inner">
+                        <Shield size={32} />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-bold text-gray-800 mb-1">Dueño / Admin</h2>
-                        <p className="text-gray-500 text-sm">Acceso total a configuración, costos y reportes.</p>
+                        <h2 className="text-xl font-bold text-gray-800">Dueño</h2>
+                        <p className="text-gray-500 text-xs mt-1">Acceso total con contraseña</p>
+                    </div>
+                    <div className="mt-auto pt-2">
+                        <span className="text-blue-600 text-sm font-bold flex items-center gap-1">
+                            Ingresar <LogIn size={16}/>
+                        </span>
                     </div>
                 </button>
 
-                {/* EMPLOYEE CARD */}
+                {/* 2. Login Empleado */}
                 <button 
-                    onClick={() => handleProfileSelect('employee')}
-                    className="group bg-white/95 hover:bg-white backdrop-blur-sm p-8 rounded-3xl shadow-2xl transition-all hover:scale-105 hover:shadow-green-500/20 text-left border-2 border-transparent hover:border-green-500 flex flex-col items-center text-center gap-4"
+                    onClick={() => handleLoginSelect('employee')}
+                    className="group bg-white/95 hover:bg-white backdrop-blur-sm p-6 rounded-2xl shadow-xl transition-all hover:-translate-y-1 hover:shadow-2xl text-center border-2 border-transparent hover:border-green-500 flex flex-col items-center gap-4 h-full"
                 >
-                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-green-600 group-hover:bg-green-600 group-hover:text-white transition-colors">
-                        <UserCircle2 size={40} />
+                    <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center text-green-600 group-hover:bg-green-600 group-hover:text-white transition-colors shadow-inner">
+                        <UserCircle2 size={32} />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-bold text-gray-800 mb-1">Empleado</h2>
-                        <p className="text-gray-500 text-sm">Acceso restringido a ventas e inventario básico.</p>
+                        <h2 className="text-xl font-bold text-gray-800">Empleado</h2>
+                        <p className="text-gray-500 text-xs mt-1">Acceso ventas con contraseña</p>
+                    </div>
+                    <div className="mt-auto pt-2">
+                        <span className="text-green-600 text-sm font-bold flex items-center gap-1">
+                            Ingresar <LogIn size={16}/>
+                        </span>
+                    </div>
+                </button>
+
+                {/* 3. Demo Dueño */}
+                <button 
+                    onClick={() => handleDemoLogin('owner')}
+                    className="group bg-gradient-to-br from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white p-6 rounded-2xl shadow-xl transition-all hover:-translate-y-1 hover:shadow-2xl text-center border-2 border-white/20 flex flex-col items-center gap-4 h-full relative overflow-hidden"
+                >
+                    <div className="absolute top-0 right-0 p-2 opacity-10">
+                        <Zap size={64} />
+                    </div>
+                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-white backdrop-blur-md shadow-inner border border-white/30">
+                        <Shield size={32} />
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-bold text-white">Demo Dueño</h2>
+                        <p className="text-white/80 text-xs mt-1">Prueba rápida sin contraseña</p>
+                    </div>
+                    <div className="mt-auto pt-2">
+                        <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold backdrop-blur-sm border border-white/30">
+                            Acceso Instantáneo
+                        </span>
+                    </div>
+                </button>
+
+                {/* 4. Demo Empleado */}
+                <button 
+                    onClick={() => handleDemoLogin('employee')}
+                    className="group bg-gradient-to-br from-teal-500 to-emerald-600 hover:from-teal-600 hover:to-emerald-700 text-white p-6 rounded-2xl shadow-xl transition-all hover:-translate-y-1 hover:shadow-2xl text-center border-2 border-white/20 flex flex-col items-center gap-4 h-full relative overflow-hidden"
+                >
+                    <div className="absolute top-0 right-0 p-2 opacity-10">
+                        <Zap size={64} />
+                    </div>
+                    <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center text-white backdrop-blur-md shadow-inner border border-white/30">
+                        <UserCircle2 size={32} />
+                    </div>
+                    <div>
+                        <h2 className="text-xl font-bold text-white">Demo Vendedor</h2>
+                        <p className="text-white/80 text-xs mt-1">Prueba rápida sin contraseña</p>
+                    </div>
+                    <div className="mt-auto pt-2">
+                        <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold backdrop-blur-sm border border-white/30">
+                            Acceso Instantáneo
+                        </span>
                     </div>
                 </button>
             </div>
         )}
 
-        {/* STEP 2: LOGIN FORM */}
         {step === 'form' && (
-            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden p-8 max-w-md mx-auto relative">
+            <div className="bg-white rounded-3xl shadow-2xl overflow-hidden p-8 max-w-md mx-auto relative animate-in zoom-in-95 duration-300">
                 <button 
-                    onClick={() => setStep('profile')}
+                    onClick={() => setStep('selection')}
                     className="absolute top-6 left-6 text-gray-400 hover:text-gray-600 transition-colors flex items-center gap-1 text-sm font-medium"
                 >
                     <ArrowLeft size={16} /> Volver
@@ -163,9 +216,9 @@ export const Login: React.FC = () => {
                         {selectedRole === 'owner' ? <Shield size={32} /> : <UserCircle2 size={32} />}
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900">
-                        Hola, {selectedRole === 'owner' ? 'Jefe' : 'Vendedor'}
+                        Acceso {selectedRole === 'owner' ? 'Administrador' : 'Empleado'}
                     </h2>
-                    <p className="text-gray-500 text-sm">Ingresa tus credenciales para continuar</p>
+                    <p className="text-gray-500 text-sm">Ingrese sus credenciales registradas</p>
                 </div>
                 
                 <form onSubmit={handleSubmit} className="space-y-5">
@@ -180,7 +233,7 @@ export const Login: React.FC = () => {
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                             className="w-full pl-12 pr-4 py-3.5 bg-gray-50 border border-gray-100 rounded-xl focus:bg-white focus:border-gray-300 focus:ring-4 focus:ring-gray-100 outline-none transition-all font-medium text-gray-800 placeholder-gray-400"
-                            placeholder="nombre@bodega.com"
+                            placeholder="usuario@sistema.com"
                             autoFocus
                             required
                         />
@@ -203,9 +256,11 @@ export const Login: React.FC = () => {
                     </div>
 
                     {error && (
-                        <div className="flex items-center gap-2 p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100">
-                        <ShieldCheck size={16} />
-                        {error}
+                        <div className="flex flex-col gap-1 p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 animate-in slide-in-from-top-2">
+                            <div className="flex items-center gap-2">
+                                <ShieldCheck size={16} />
+                                <span>{error}</span>
+                            </div>
                         </div>
                     )}
 

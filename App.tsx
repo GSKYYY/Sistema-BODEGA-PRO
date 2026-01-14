@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { DataProvider, useData } from './context/DataContext';
@@ -18,15 +17,34 @@ import { Settings } from './pages/Settings';
 import { Suppliers } from './pages/Suppliers';
 import { CashBox } from './pages/CashBox';
 
-const Layout: React.FC<{ children: React.ReactNode; title: string }> = ({ children, title }) => (
-  <div className="flex bg-gray-50 min-h-screen">
-    <Sidebar />
-    <div className="flex-1 ml-64">
-      <Header title={title} />
-      <main>{children}</main>
+const Layout: React.FC<{ children: React.ReactNode; title: string }> = ({ children, title }) => {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  return (
+    <div className="flex h-screen overflow-hidden bg-gray-50">
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-20 md:hidden animate-in fade-in"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+      
+      {/* Sidebar Container */}
+      <div className={`fixed inset-y-0 left-0 z-30 w-64 transform transition-transform duration-300 ease-in-out md:relative md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <Sidebar onClose={() => setIsSidebarOpen(false)} />
+      </div>
+
+      {/* Main Content */}
+      <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
+        <Header title={title} onMenuClick={() => setIsSidebarOpen(true)} />
+        <main className="flex-1 overflow-y-auto overflow-x-hidden relative">
+            {children}
+        </main>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { user, loading } = useData();

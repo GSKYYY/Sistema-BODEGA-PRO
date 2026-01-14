@@ -11,10 +11,15 @@ import {
   LogOut,
   Store,
   Truck,
-  Wallet
+  Wallet,
+  X
 } from 'lucide-react';
 
-export const Sidebar: React.FC = () => {
+interface SidebarProps {
+    onClose?: () => void;
+}
+
+export const Sidebar: React.FC<SidebarProps> = ({ onClose }) => {
   const { config, logout, user } = useData();
   const navigate = useNavigate();
 
@@ -35,10 +40,8 @@ export const Sidebar: React.FC = () => {
 
   const activeClass = themeColors[config.theme] || themeColors.blue;
   const isChristmas = config.theme === 'christmas';
-  // Use a fallback solid color for icons if christmas gradient is active
   const logoColor = isChristmas ? 'bg-red-600' : activeClass.split(' ')[0];
 
-  // Helper to check permissions
   const hasAccess = (role: 'owner' | 'employee', permission?: boolean) => {
     if (!user) return false;
     if (user.role === 'owner') return true;
@@ -49,40 +52,49 @@ export const Sidebar: React.FC = () => {
   };
 
   const allNavItems = [
-    { to: '/', icon: LayoutDashboard, label: 'Panel Principal', show: true },
+    { to: '/', icon: LayoutDashboard, label: 'Panel', show: true },
     { to: '/pos', icon: ShoppingCart, label: 'Punto de Venta', show: true },
     { to: '/inventory', icon: Package, label: 'Inventario', show: true },
-    { to: '/sales', icon: History, label: 'Historial Ventas', show: true },
-    { to: '/cashbox', icon: Wallet, label: 'Caja Diaria', show: hasAccess('employee', config.permissions.canAccessCashbox) },
+    { to: '/sales', icon: History, label: 'Ventas', show: true },
+    { to: '/cashbox', icon: Wallet, label: 'Caja', show: hasAccess('employee', config.permissions.canAccessCashbox) },
     { to: '/clients', icon: Users, label: 'Clientes', show: hasAccess('employee', config.permissions.canManageClients) },
     { to: '/suppliers', icon: Truck, label: 'Proveedores', show: hasAccess('owner') },
-    { to: '/settings', icon: Settings, label: 'Configuración', show: hasAccess('owner') },
+    { to: '/settings', icon: Settings, label: 'Ajustes', show: hasAccess('owner') },
   ];
 
   const navItems = allNavItems.filter(item => item.show);
 
   return (
-    <div className={`w-64 h-screen fixed left-0 top-0 flex flex-col shadow-xl z-20 ${isChristmas ? 'bg-green-900 border-r-4 border-red-700' : 'bg-slate-900'} text-white`}>
-      <div className="p-6 border-b border-white/10 flex items-center gap-3">
-        <div className={`${logoColor} p-2 rounded-lg transition-colors duration-300 shadow-md`}>
-            <Store size={24} className={isChristmas ? "text-yellow-300" : "text-white"} />
+    <div className={`w-64 h-full flex flex-col shadow-xl ${isChristmas ? 'bg-green-900 border-r-4 border-red-700' : 'bg-slate-900'} text-white`}>
+      <div className="p-4 md:p-6 border-b border-white/10 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+            <div className={`${logoColor} p-2 rounded-lg transition-colors duration-300 shadow-md`}>
+                <Store size={24} className={isChristmas ? "text-yellow-300" : "text-white"} />
+            </div>
+            <div className="overflow-hidden">
+              <h1 className="font-bold text-lg leading-tight truncate">Bodega Pro</h1>
+              <p className="text-xs text-gray-400 truncate max-w-[120px]">{config.businessName}</p>
+            </div>
         </div>
-        <div>
-          <h1 className="font-bold text-lg leading-tight truncate w-36">Bodega Pro</h1>
-          <p className="text-xs text-gray-400">{config.businessName}</p>
-        </div>
+        {/* Mobile Close Button */}
+        {onClose && (
+            <button onClick={onClose} className="md:hidden text-gray-400 hover:text-white">
+                <X size={24} />
+            </button>
+        )}
       </div>
 
-      <nav className="flex-1 py-6 overflow-y-auto">
-        <ul className="space-y-1">
+      <nav className="flex-1 py-4 overflow-y-auto">
+        <ul className="space-y-1 px-2">
           {navItems.map((item) => (
             <li key={item.to}>
               <NavLink
                 to={item.to}
+                onClick={onClose}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-6 py-3 transition-all duration-300 ${
+                  `flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300 ${
                     isActive
-                      ? `${activeClass} text-white border-r-4 shadow-inner`
+                      ? `${activeClass} text-white shadow-inner`
                       : 'text-gray-400 hover:bg-white/10 hover:text-white'
                   }`
                 }
@@ -111,7 +123,7 @@ export const Sidebar: React.FC = () => {
         </div>
         <button 
           onClick={handleLogout}
-          className="flex items-center gap-3 text-gray-400 hover:text-red-400 transition-colors w-full px-2"
+          className="flex items-center gap-3 text-gray-400 hover:text-red-400 transition-colors w-full px-2 py-2 rounded-lg hover:bg-white/5"
         >
           <LogOut size={18} />
           <span className="font-medium text-sm">Cerrar Sesión</span>

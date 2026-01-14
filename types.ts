@@ -47,7 +47,7 @@ export interface Expense {
   amount: number;
   category: string;
   date: string;
-  paymentMethod: 'cash_bs' | 'cash_usd' | 'cash_cop' | 'transfer' | 'mobile_pay';
+  paymentMethod: 'cash_local' | 'cash_usd' | 'transfer' | 'mobile_pay' | 'card'; 
 }
 
 export interface Sale {
@@ -55,9 +55,9 @@ export interface Sale {
   number: string;
   date: string;
   totalUsd: number;
-  totalBs: number;
+  totalLocal: number; // Renamed from totalBs to be generic
   exchangeRate: number;
-  paymentMethod: 'cash_usd' | 'cash_bs' | 'cash_cop' | 'mobile_pay' | 'transfer' | 'card' | 'credit';
+  paymentMethod: 'cash_usd' | 'cash_local' | 'mobile_pay' | 'transfer' | 'card' | 'credit';
   clientId?: string | null;
   items: CartItem[];
   taxAmount?: number;
@@ -82,11 +82,13 @@ export interface ReceiptConfig {
 export interface AppConfig {
   businessName: string;
   address: string;
-  exchangeRate: number;
-  copExchangeRate: number;
-  currencySymbol: string;
+  
+  // Currency Configuration
+  currencyCode: string; // e.g., 'MXN', 'COP', 'VES'
+  currencySymbol: string; // e.g., '$', 'Bs.', 'S/'
+  exchangeRate: number; // Rate relative to 1 USD
+  
   theme: string;
-  showCop: boolean;
   taxRate: number;
   enableNegativeStock: boolean;
   lowStockThreshold: number;

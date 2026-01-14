@@ -1,64 +1,58 @@
 
 import React, { useState } from 'react';
 import { useData } from '../context/DataContext';
-import { Bell, Search, AlertTriangle, CheckCircle, Info } from 'lucide-react';
+import { Bell, AlertTriangle, CheckCircle, Info, Menu } from 'lucide-react';
 
-export const Header: React.FC<{ title: string }> = ({ title }) => {
+interface HeaderProps {
+    title: string;
+    onMenuClick?: () => void;
+}
+
+export const Header: React.FC<HeaderProps> = ({ title, onMenuClick }) => {
   const { config, updateConfig, notifications, products, user } = useData();
   const [showNotifications, setShowNotifications] = useState(false);
 
   const lowStockCount = products.filter(p => p.stock <= p.minStock && p.status === 'active').length;
 
   return (
-    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 sticky top-0 z-10 shadow-sm">
-      <h2 className="text-xl font-bold text-gray-800">{title}</h2>
-
-      <div className="flex items-center gap-6">
-        {/* Exchange Rates Widget */}
-        {config.showCop && (
-          <div className="hidden md:flex items-center gap-4">
-              <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 gap-2">
-                  <span className="text-xs font-semibold text-gray-600">BCV:</span>
-                  <div className="flex items-center text-green-600 font-bold text-sm">
-                      <span>Bs.</span>
-                      <input 
-                          type="number" 
-                          value={config.exchangeRate}
-                          onChange={(e) => updateConfig({ ...config, exchangeRate: parseFloat(e.target.value) || 0 })}
-                          className="w-16 bg-transparent border-b border-gray-300 focus:border-green-500 focus:outline-none text-right px-1"
-                      />
-                  </div>
-              </div>
-
-              <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 gap-2">
-                  <span className="text-xs font-semibold text-gray-600">COP:</span>
-                  <div className="flex items-center text-blue-600 font-bold text-sm">
-                      <span>$</span>
-                      <input 
-                          type="number" 
-                          value={config.copExchangeRate}
-                          onChange={(e) => updateConfig({ ...config, copExchangeRate: parseFloat(e.target.value) || 0 })}
-                          className="w-16 bg-transparent border-b border-gray-300 focus:border-blue-500 focus:outline-none text-right px-1"
-                      />
-                  </div>
-              </div>
-          </div>
+    <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-8 sticky top-0 z-10 shadow-sm shrink-0">
+      <div className="flex items-center gap-3">
+        {onMenuClick && (
+            <button 
+                onClick={onMenuClick}
+                className="md:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+            >
+                <Menu size={24} />
+            </button>
         )}
-        
-        {!config.showCop && (
-             <div className="hidden md:flex items-center bg-gray-100 rounded-lg px-3 py-1.5 gap-2">
-                <span className="text-xs font-semibold text-gray-600">BCV:</span>
+        <h2 className="text-lg md:text-xl font-bold text-gray-800 truncate">{title}</h2>
+      </div>
+
+      <div className="flex items-center gap-3 md:gap-6">
+        {/* Dynamic Currency Widget */}
+        <div className="hidden lg:flex items-center gap-4">
+            <div className="flex items-center bg-gray-100 rounded-lg px-3 py-1.5 gap-2">
+                <span className="text-xs font-semibold text-gray-600">
+                    Tasa {config.currencyCode}:
+                </span>
                 <div className="flex items-center text-green-600 font-bold text-sm">
-                    <span>Bs.</span>
+                    <span className="mr-1">{config.currencySymbol}</span>
                     <input 
                         type="number" 
                         value={config.exchangeRate}
                         onChange={(e) => updateConfig({ ...config, exchangeRate: parseFloat(e.target.value) || 0 })}
-                        className="w-16 bg-transparent border-b border-gray-300 focus:border-green-500 focus:outline-none text-right px-1"
+                        className="w-20 bg-transparent border-b border-gray-300 focus:border-green-500 focus:outline-none text-right px-1"
                     />
                 </div>
             </div>
-        )}
+        </div>
+        
+        {/* Simple Rate - Mobile/Tablet */}
+        <div className="lg:hidden flex items-center bg-gray-50 rounded-lg px-2 py-1">
+             <span className="text-xs font-bold text-green-600">
+                {config.currencyCode} {config.exchangeRate}
+             </span>
+        </div>
 
         {/* Notifications */}
         <div className="relative">
@@ -73,7 +67,7 @@ export const Header: React.FC<{ title: string }> = ({ title }) => {
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 top-12 w-80 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50">
+            <div className="absolute right-0 top-12 w-80 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50 animate-in slide-in-from-top-2">
                 <div className="p-3 bg-gray-50 border-b border-gray-100 font-semibold text-gray-700 flex justify-between">
                     <span>Notificaciones</span>
                     {lowStockCount > 0 && <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">{lowStockCount} Alertas</span>}
@@ -108,11 +102,11 @@ export const Header: React.FC<{ title: string }> = ({ title }) => {
           )}
         </div>
 
-        <div className="flex items-center gap-3 pl-6 border-l border-gray-200">
+        <div className="hidden md:flex items-center gap-3 pl-6 border-l border-gray-200">
           <div className="w-9 h-9 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center font-bold">
             {user?.name.charAt(0)}
           </div>
-          <div className="hidden md:block">
+          <div>
             <p className="text-sm font-medium text-gray-800">{user?.name}</p>
             <p className="text-xs text-gray-500 capitalize">{user?.role === 'owner' ? 'Dueño' : 'Empleado'}</p>
           </div>

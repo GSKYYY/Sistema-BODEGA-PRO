@@ -1,12 +1,12 @@
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { 
   Product, Category, Sale, Client, Supplier, Expense, AppConfig, Notification, User 
 } from '../types';
 import { db, auth } from '../firebaseConfig';
 import { 
   collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, 
-  setDoc, runTransaction, query, orderBy, where, getDoc 
+  setDoc, runTransaction, query, orderBy, getDoc 
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { MathUtils } from '../utils/math';
@@ -15,6 +15,7 @@ interface DataContextType {
   user: User | null;
   loading: boolean;
   login: () => void; // Handled in Login.tsx via Firebase Auth
+  loginDemo: (role: 'owner' | 'employee') => void; 
   logout: () => void;
 
   products: Product[];
@@ -26,7 +27,7 @@ interface DataContextType {
   config: AppConfig;
   notifications: Notification[];
   
-  // Actions (Promise based for async feedback)
+  // Actions
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
   updateProduct: (product: Product) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
@@ -62,11 +63,12 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 const INITIAL_CONFIG: AppConfig = {
   businessName: 'Mi Negocio',
   address: 'Dirección Local',
-  exchangeRate: 45.00,
-  copExchangeRate: 4200, 
+  
+  currencyCode: 'USD',
   currencySymbol: '$',
+  exchangeRate: 1, 
+
   theme: 'blue',
-  showCop: true,
   taxRate: 0,
   enableNegativeStock: true,
   lowStockThreshold: 5,
@@ -86,6 +88,26 @@ const INITIAL_CONFIG: AppConfig = {
   }
 };
 
+// --- HELPER FOR DEMO DATA PERSISTENCE ---
+const useLocalStorage = (key: string, initialValue: any) => {
+    const read = () => {
+        try {
+            const item = window.localStorage.getItem(key);
+            return item ? JSON.parse(item) : initialValue;
+        } catch (error) {
+            return initialValue;
+        }
+    };
+    const write = (value: any) => {
+        try {
+            window.localStorage.setItem(key, JSON.stringify(value));
+        } catch (error) {
+            console.error("Local storage full or error", error);
+        }
+    };
+    return { read, write };
+};
+
 export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -99,298 +121,486 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [config, setConfig] = useState<AppConfig>(INITIAL_CONFIG);
   
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  
+  // Refs
+  const hasNotifiedStock = useRef(false);
+  const hasNotifiedDebt = useRef(false);
+
+  // Storage Helpers for Demo Mode
+  const localProducts = useLocalStorage('demo_products', []);
+  const localCategories = useLocalStorage('demo_categories', []);
+  const localSales = useLocalStorage('demo_sales', []);
+  const localClients = useLocalStorage('demo_clients', []);
+  const localSuppliers = useLocalStorage('demo_suppliers', []);
+  const localExpenses = useLocalStorage('demo_expenses', []);
+  const localConfig = useLocalStorage('demo_config', INITIAL_CONFIG);
+
+  const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning') => {
+    const id = Date.now();
+    setNotifications(prev => [...prev, { id, message, type, timestamp: id }]);
+    setTimeout(() => {
+        setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 6000);
+  };
+
+  const isDemo = user?.uid.startsWith('demo-');
 
   // 1. Auth Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Fetch user role from Firestore
+        // Real Firebase User
         let userData: any = null;
         try {
             const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
             userData = userDoc.exists() ? userDoc.data() : null;
         } catch (e) {
-            console.warn("Failed to fetch user data, falling back to basic auth", e);
+            console.warn("Failed to fetch user data", e);
         }
         
         setUser({
           uid: firebaseUser.uid,
           email: firebaseUser.email || '',
           name: userData?.name || 'Usuario',
-          role: userData?.role || 'employee',
+          role: userData?.role || 'owner',
           isAuthenticated: true
         });
       } else {
-        setUser(null);
+        // Check for Demo User persistence
+        const demoUser = localStorage.getItem('bodega_demo_user');
+        if (demoUser) {
+            setUser(JSON.parse(demoUser));
+        } else {
+            setUser(null);
+        }
       }
       setLoading(false);
     });
     return unsubscribe;
   }, []);
 
-  // 2. Real-time Listeners (Only when authenticated)
+  // 2. Data Synchronization (Firebase vs LocalStorage)
   useEffect(() => {
     if (!user) return;
 
+    if (isDemo) {
+        // --- LOAD DEMO DATA FROM LOCALSTORAGE ---
+        setProducts(localProducts.read());
+        setCategories(localCategories.read());
+        setSales(localSales.read());
+        setClients(localClients.read());
+        setSuppliers(localSuppliers.read());
+        setExpenses(localExpenses.read());
+        setConfig(localConfig.read());
+        return; // Stop execution, don't set up Firestore listeners
+    }
+
+    // --- FIREBASE LISTENERS ---
     const unsubProducts = onSnapshot(collection(db, 'products'), (snap) => {
       setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Product)));
-    }, (error) => console.error("Error loading products:", error));
+    }, (e) => console.log("Offline/Cache Mode for Products"));
 
     const unsubCategories = onSnapshot(collection(db, 'categories'), (snap) => {
       setCategories(snap.docs.map(d => ({ id: d.id, ...d.data() } as Category)));
-    }, (error) => console.error("Error loading categories:", error));
+    });
 
-    // Order sales by date desc
     const qSales = query(collection(db, 'sales'), orderBy('date', 'desc'));
     const unsubSales = onSnapshot(qSales, (snap) => {
-      setSales(snap.docs.map(d => ({ id: d.id, ...d.data() } as Sale)));
-    }, (error) => console.error("Error loading sales:", error));
+      setSales(snap.docs.map(d => {
+          const data = d.data();
+          return { 
+              id: d.id, 
+              ...data,
+              totalLocal: data.totalLocal || data.totalBs || 0,
+              paymentMethod: (data.paymentMethod === 'cash_bs' || data.paymentMethod === 'cash_cop') ? 'cash_local' : data.paymentMethod
+          } as Sale;
+      }));
+    });
 
     const unsubClients = onSnapshot(collection(db, 'clients'), (snap) => {
       setClients(snap.docs.map(d => ({ id: d.id, ...d.data() } as Client)));
-    }, (error) => console.error("Error loading clients:", error));
+    });
 
-    // FIX: Conditional Subscription for Suppliers (Only Owner can read)
-    // This prevents the "Missing or insufficient permissions" error for employees
     let unsubSuppliers = () => {};
     if (user.role === 'owner') {
         unsubSuppliers = onSnapshot(collection(db, 'suppliers'), (snap) => {
             setSuppliers(snap.docs.map(d => ({ id: d.id, ...d.data() } as Supplier)));
-        }, (error) => {
-            console.warn("Access to suppliers denied or failed:", error);
-            setSuppliers([]); // Graceful fallback
         });
-    } else {
-        setSuppliers([]);
     }
 
     const unsubExpenses = onSnapshot(collection(db, 'expenses'), (snap) => {
-      setExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() } as Expense)));
-    }, (error) => console.error("Error loading expenses:", error));
+      setExpenses(snap.docs.map(d => {
+          const data = d.data();
+           return {
+               id: d.id,
+               ...data,
+               paymentMethod: (data.paymentMethod === 'cash_bs' || data.paymentMethod === 'cash_cop') ? 'cash_local' : data.paymentMethod
+           } as Expense
+      }));
+    });
 
     const unsubConfig = onSnapshot(doc(db, 'config', 'main'), (snap) => {
       if (snap.exists()) {
-        setConfig({ ...INITIAL_CONFIG, ...snap.data() });
+        const data = snap.data();
+        setConfig({ 
+            ...INITIAL_CONFIG, 
+            ...data,
+            currencyCode: data.currencyCode || (data.showCop ? 'COP' : 'VES'), 
+            currencySymbol: data.currencySymbol || (data.showCop ? '$' : 'Bs.'),
+            exchangeRate: data.exchangeRate || 1
+        });
       }
-    }, (error) => console.error("Error loading config:", error));
+    });
 
     return () => {
-      unsubProducts();
-      unsubCategories();
-      unsubSales();
-      unsubClients();
-      unsubSuppliers();
-      unsubExpenses();
-      unsubConfig();
+      unsubProducts(); unsubCategories(); unsubSales(); unsubClients();
+      unsubSuppliers(); unsubExpenses(); unsubConfig();
     };
-  }, [user]);
+  }, [user?.uid, isDemo]); // Re-run if user ID changes or mode changes
 
-  // Notifications Helper
-  const showNotification = (message: string, type: 'success' | 'error' | 'info' | 'warning') => {
-    const id = Date.now();
-    setNotifications(prev => [...prev, { id, message, type, timestamp: id }]);
-    setTimeout(() => {
-        setNotifications(prev => prev.filter(n => n.id !== id));
-    }, 5000);
-  };
+  // 3. Alerts
+  useEffect(() => {
+    if (loading || !user) return;
+    const checkAlerts = () => {
+        const lowStockItems = products.filter(p => p.stock <= p.minStock && p.status === 'active');
+        if (lowStockItems.length > 0 && !hasNotifiedStock.current) {
+            showNotification(`⚠️ Alerta: ${lowStockItems.length} productos con stock bajo`, 'warning');
+            hasNotifiedStock.current = true;
+        }
+        const highDebtClients = clients.filter(c => c.id !== '1' && c.debt > 0 && c.debt >= (c.creditLimit * 0.9));
+        if (highDebtClients.length > 0 && !hasNotifiedDebt.current && user.role === 'owner') {
+            showNotification(`💰 Cobranza: ${highDebtClients.length} clientes cerca del límite`, 'info');
+            hasNotifiedDebt.current = true;
+        }
+    };
+    const timer = setTimeout(checkAlerts, 2000);
+    return () => clearTimeout(timer);
+  }, [products, clients, user, loading]);
+
 
   const clearNotifications = () => setNotifications([]);
-
-  const logout = async () => {
-    await signOut(auth);
-    setUser(null);
+  
+  const logout = async () => { 
+      try { await signOut(auth); } catch (e) {}
+      localStorage.removeItem('bodega_demo_user');
+      setUser(null); 
   };
 
-  // --- CRUD ACTIONS ---
+  const loginDemo = (role: 'owner' | 'employee') => {
+      const demoUser: User = {
+          uid: 'demo-' + Date.now(),
+          email: role === 'owner' ? 'admin@demo.com' : 'vendedor@demo.com',
+          name: role === 'owner' ? 'Admin Demo' : 'Vendedor Demo',
+          role: role,
+          isAuthenticated: true
+      };
+      setUser(demoUser);
+      localStorage.setItem('bodega_demo_user', JSON.stringify(demoUser));
+      showNotification('Modo Demo Activado (Datos Locales)', 'success');
+  };
 
-  const addProduct = async (product: Omit<Product, 'id'>) => {
-    try {
-      await addDoc(collection(db, 'products'), product);
-      showNotification('Producto agregado', 'success');
-    } catch (e) {
-      console.error(e);
-      showNotification('Error agregando producto', 'error');
+  // --- CRUD ACTIONS (Unified for Local/Cloud) ---
+
+  const addProduct = async (productData: Omit<Product, 'id'>) => {
+    if (isDemo) {
+        const newProduct = { ...productData, id: 'local-' + Date.now() };
+        const newProducts = [...products, newProduct];
+        setProducts(newProducts);
+        localProducts.write(newProducts);
+        showNotification('Producto guardado', 'success');
+        return;
     }
+    try { await addDoc(collection(db, 'products'), productData); showNotification('Producto guardado', 'success'); } 
+    catch (e) { showNotification('Error guardando', 'error'); }
   };
 
   const updateProduct = async (product: Product) => {
-    try {
-      await updateDoc(doc(db, 'products', product.id), { ...product });
-      showNotification('Producto actualizado', 'success');
-    } catch (e) {
-      showNotification('Error actualizando', 'error');
+    if (isDemo) {
+        const newProducts = products.map(p => p.id === product.id ? product : p);
+        setProducts(newProducts);
+        localProducts.write(newProducts);
+        showNotification('Producto actualizado', 'success');
+        return;
     }
+    try { await updateDoc(doc(db, 'products', product.id), { ...product }); showNotification('Producto actualizado', 'success'); } 
+    catch (e) { showNotification('Error actualizando', 'error'); }
   };
 
   const deleteProduct = async (id: string) => {
-    try {
-      await deleteDoc(doc(db, 'products', id));
-      showNotification('Producto eliminado', 'info');
-    } catch (e) {
-      showNotification('Error eliminando', 'error');
+    if (isDemo) {
+        const newProducts = products.filter(p => p.id !== id);
+        setProducts(newProducts);
+        localProducts.write(newProducts);
+        showNotification('Producto eliminado', 'info');
+        return;
     }
+    try { await deleteDoc(doc(db, 'products', id)); showNotification('Producto eliminado', 'info'); } 
+    catch (e) { showNotification('Error eliminando', 'error'); }
   };
 
-  // --- CRITICAL: SALES TRANSACTION ---
   const addSale = async (sale: Omit<Sale, 'id'>) => {
+    if (isDemo) {
+        // 1. Update Stock Locally
+        const currentProducts = [...products];
+        for (const item of sale.items) {
+            const prodIndex = currentProducts.findIndex(p => p.id === item.id);
+            if (prodIndex >= 0) {
+                const currentStock = currentProducts[prodIndex].stock;
+                if (!config.enableNegativeStock && currentStock < item.quantity) throw new Error(`Stock insuficiente: ${item.name}`);
+                currentProducts[prodIndex] = { 
+                    ...currentProducts[prodIndex], 
+                    stock: MathUtils.sub(currentStock, item.quantity) 
+                };
+            }
+        }
+        setProducts(currentProducts);
+        localProducts.write(currentProducts);
+
+        // 2. Update Client Debt Locally
+        if (sale.paymentMethod === 'credit' && sale.clientId) {
+            const currentClients = [...clients];
+            const clientIndex = currentClients.findIndex(c => c.id === sale.clientId);
+            if (clientIndex >= 0) {
+                currentClients[clientIndex] = {
+                    ...currentClients[clientIndex],
+                    debt: MathUtils.add(currentClients[clientIndex].debt, sale.totalUsd)
+                };
+                setClients(currentClients);
+                localClients.write(currentClients);
+            }
+        }
+
+        // 3. Save Sale
+        const newSale = { ...sale, id: 'local-sale-' + Date.now() };
+        const newSales = [newSale, ...sales];
+        setSales(newSales);
+        localSales.write(newSales);
+        
+        showNotification(`Venta ${sale.number} registrada`, 'success');
+        return;
+    }
+
+    // Firebase Transaction
     try {
       await runTransaction(db, async (transaction) => {
-        // 1. Check stock for all items
         for (const item of sale.items) {
           const prodRef = doc(db, 'products', item.id);
           const prodDoc = await transaction.get(prodRef);
-          
-          if (!prodDoc.exists()) {
-            throw new Error(`Producto ${item.name} no existe`);
-          }
-
+          if (!prodDoc.exists()) throw new Error(`Producto ${item.name} no existe`);
           const currentStock = prodDoc.data().stock;
-          
-          if (!config.enableNegativeStock && currentStock < item.quantity) {
-            throw new Error(`Stock insuficiente para ${item.name}`);
-          }
-
-          // 2. Deduct stock
-          const newStock = MathUtils.sub(currentStock, item.quantity);
-          transaction.update(prodRef, { stock: newStock });
+          if (!config.enableNegativeStock && currentStock < item.quantity) throw new Error(`Stock insuficiente para ${item.name}`);
+          transaction.update(prodRef, { stock: MathUtils.sub(currentStock, item.quantity) });
         }
-
-        // 3. Create Sale Document
         const newSaleRef = doc(collection(db, 'sales'));
-        
-        // FIX: Remove undefined keys to ensure Firestore compatibility
-        // Firestore cannot handle 'undefined' values, so we delete them.
         const saleData = { ...sale, id: newSaleRef.id };
-        (Object.keys(saleData) as (keyof typeof saleData)[]).forEach(key => {
-            if ((saleData as any)[key] === undefined) {
-                delete (saleData as any)[key];
-            }
-        });
-
+        // Remove undefined keys
+        (Object.keys(saleData) as (keyof typeof saleData)[]).forEach(key => { if ((saleData as any)[key] === undefined) delete (saleData as any)[key]; });
         transaction.set(newSaleRef, saleData);
-
-        // 4. Update Client Debt if credit
         if (sale.paymentMethod === 'credit' && sale.clientId) {
           const clientRef = doc(db, 'clients', sale.clientId);
           const clientDoc = await transaction.get(clientRef);
-          if (clientDoc.exists()) {
-            const newDebt = MathUtils.add(clientDoc.data().debt, sale.totalUsd);
-            transaction.update(clientRef, { debt: newDebt });
-          }
+          if (clientDoc.exists()) transaction.update(clientRef, { debt: MathUtils.add(clientDoc.data().debt, sale.totalUsd) });
         }
       });
-      
       showNotification(`Venta ${sale.number} registrada`, 'success');
     } catch (e: any) {
       console.error(e);
       showNotification(e.message || 'Error registrando venta', 'error');
-      throw e; // Re-throw so UI can handle it
+      throw e;
     }
   };
 
-  const addClient = async (client: Omit<Client, 'id'>) => {
-    await addDoc(collection(db, 'clients'), client);
-    showNotification('Cliente registrado', 'success');
+  const addClient = async (client: Omit<Client, 'id'>) => { 
+      if (isDemo) {
+          const newClient = { ...client, id: 'local-client-' + Date.now() };
+          const newClients = [...clients, newClient];
+          setClients(newClients);
+          localClients.write(newClients);
+          showNotification('Cliente registrado', 'success');
+          return;
+      }
+      try { await addDoc(collection(db, 'clients'), client); showNotification('Cliente registrado', 'success'); } catch(e) { showNotification('Error', 'error'); } 
   };
-
-  const updateClient = async (client: Client) => {
-    await updateDoc(doc(db, 'clients', client.id), { ...client });
-    showNotification('Cliente actualizado', 'success');
+  
+  const updateClient = async (client: Client) => { 
+      if (isDemo) {
+          const newClients = clients.map(c => c.id === client.id ? client : c);
+          setClients(newClients);
+          localClients.write(newClients);
+          showNotification('Cliente actualizado', 'success');
+          return;
+      }
+      try { await updateDoc(doc(db, 'clients', client.id), { ...client }); showNotification('Cliente actualizado', 'success'); } catch(e) { showNotification('Error', 'error'); } 
   };
-
-  const deleteClient = async (id: string) => {
-    await deleteDoc(doc(db, 'clients', id));
+  
+  const deleteClient = async (id: string) => { 
+      if (isDemo) {
+          const newClients = clients.filter(c => c.id !== id);
+          setClients(newClients);
+          localClients.write(newClients);
+          return;
+      }
+      try { await deleteDoc(doc(db, 'clients', id)); } catch(e) {} 
   };
 
   const registerClientPayment = async (clientId: string, amount: number) => {
+    if (isDemo) {
+        const currentClients = [...clients];
+        const index = currentClients.findIndex(c => c.id === clientId);
+        if (index >= 0) {
+            currentClients[index] = {
+                ...currentClients[index],
+                debt: Math.max(0, MathUtils.sub(currentClients[index].debt, amount))
+            };
+            setClients(currentClients);
+            localClients.write(currentClients);
+            showNotification('Abono registrado', 'success');
+        }
+        return;
+    }
     try {
       await runTransaction(db, async (transaction) => {
         const clientRef = doc(db, 'clients', clientId);
         const clientDoc = await transaction.get(clientRef);
         if (!clientDoc.exists()) throw new Error("Cliente no existe");
-
         const currentDebt = clientDoc.data().debt;
-        const newDebt = Math.max(0, MathUtils.sub(currentDebt, amount));
-        
-        transaction.update(clientRef, { debt: newDebt });
-        
-        // Optional: Create a payment record
+        transaction.update(clientRef, { debt: Math.max(0, MathUtils.sub(currentDebt, amount)) });
         const paymentRef = doc(collection(db, 'client_payments'));
-        transaction.set(paymentRef, {
-            clientId,
-            amount,
-            date: new Date().toISOString(),
-            oldDebt: currentDebt,
-            newDebt: newDebt
-        });
+        transaction.set(paymentRef, { clientId, amount, date: new Date().toISOString(), oldDebt: currentDebt, newDebt: Math.max(0, MathUtils.sub(currentDebt, amount)) });
       });
       showNotification('Pago registrado', 'success');
+    } catch (e) { showNotification('Error', 'error'); }
+  };
+
+  const addSupplier = async (supplier: Omit<Supplier, 'id'>) => { 
+      if (isDemo) {
+          const newSup = { ...supplier, id: 'local-sup-' + Date.now() };
+          const newSups = [...suppliers, newSup];
+          setSuppliers(newSups);
+          localSuppliers.write(newSups);
+          showNotification('Proveedor registrado', 'success');
+          return;
+      }
+      try { await addDoc(collection(db, 'suppliers'), supplier); showNotification('Proveedor registrado', 'success'); } catch(e) {} 
+  };
+  
+  const updateSupplier = async (supplier: Supplier) => { 
+      if (isDemo) {
+          const newSups = suppliers.map(s => s.id === supplier.id ? supplier : s);
+          setSuppliers(newSups);
+          localSuppliers.write(newSups);
+          return;
+      }
+      try { await updateDoc(doc(db, 'suppliers', supplier.id), { ...supplier }); } catch(e) {} 
+  };
+  
+  const deleteSupplier = async (id: string) => { 
+      if (isDemo) {
+          const newSups = suppliers.filter(s => s.id !== id);
+          setSuppliers(newSups);
+          localSuppliers.write(newSups);
+          return;
+      }
+      try { await deleteDoc(doc(db, 'suppliers', id)); } catch(e) {} 
+  };
+  
+  const addExpense = async (expense: Omit<Expense, 'id'>) => { 
+      if (isDemo) {
+          const newExp = { ...expense, id: 'local-exp-' + Date.now() };
+          const newExps = [newExp, ...expenses];
+          setExpenses(newExps);
+          localExpenses.write(newExps);
+          showNotification('Gasto registrado', 'success');
+          return;
+      }
+      try { await addDoc(collection(db, 'expenses'), expense); showNotification('Gasto registrado', 'success'); } catch(e) {} 
+  };
+  
+  const deleteExpense = async (id: string) => { 
+      if (isDemo) {
+          const newExps = expenses.filter(e => e.id !== id);
+          setExpenses(newExps);
+          localExpenses.write(newExps);
+          return;
+      }
+      try { await deleteDoc(doc(db, 'expenses', id)); } catch(e) {} 
+  };
+  
+  const addCategory = async (category: Omit<Category, 'id'>) => { 
+      if (isDemo) {
+          const newCat = { ...category, id: 'local-cat-' + Date.now() };
+          const newCats = [...categories, newCat];
+          setCategories(newCats);
+          localCategories.write(newCats);
+          showNotification('Categoría agregada', 'success');
+          return;
+      }
+      try { await addDoc(collection(db, 'categories'), category); showNotification('Categoría agregada', 'success'); } catch(e) {} 
+  };
+  
+  const deleteCategory = async (id: string) => { 
+      if (isDemo) {
+          const newCats = categories.filter(c => c.id !== id);
+          setCategories(newCats);
+          localCategories.write(newCats);
+          return;
+      }
+      try { await deleteDoc(doc(db, 'categories', id)); } catch(e) {} 
+  };
+  
+  const updateConfig = async (newConfig: AppConfig) => {
+    if (isDemo) {
+        setConfig(newConfig);
+        localConfig.write(newConfig);
+        showNotification('Configuración guardada (Local)', 'success');
+        return;
+    }
+    try {
+        await setDoc(doc(db, 'config', 'main'), newConfig);
+        setConfig(newConfig);
+        showNotification('Configuración guardada', 'success');
     } catch (e) {
-      showNotification('Error registrando pago', 'error');
+        showNotification('Error al guardar configuración', 'error');
     }
   };
 
-  const addSupplier = async (supplier: Omit<Supplier, 'id'>) => {
-    await addDoc(collection(db, 'suppliers'), supplier);
-    showNotification('Proveedor registrado', 'success');
+  const clearSalesHistory = async () => { 
+      if (isDemo) {
+          setSales([]);
+          localSales.write([]);
+          showNotification('Historial de ventas borrado (Demo)', 'warning');
+          return;
+      }
+      showNotification('Contacte soporte para borrado masivo en nube', 'warning'); 
   };
-
-  const updateSupplier = async (supplier: Supplier) => {
-    await updateDoc(doc(db, 'suppliers', supplier.id), { ...supplier });
+  
+  const clearExpensesHistory = async () => { 
+      if (isDemo) {
+          setExpenses([]);
+          localExpenses.write([]);
+          showNotification('Historial de gastos borrado (Demo)', 'warning');
+          return;
+      }
+      showNotification('Contacte soporte para borrado masivo en nube', 'warning'); 
   };
-
-  const deleteSupplier = async (id: string) => {
-    await deleteDoc(doc(db, 'suppliers', id));
-  };
-
-  const addExpense = async (expense: Omit<Expense, 'id'>) => {
-    await addDoc(collection(db, 'expenses'), expense);
-    showNotification('Gasto registrado', 'success');
-  };
-
-  const deleteExpense = async (id: string) => {
-    await deleteDoc(doc(db, 'expenses', id));
-  };
-
-  const addCategory = async (category: Omit<Category, 'id'>) => {
-    await addDoc(collection(db, 'categories'), category);
-    showNotification('Categoría agregada', 'success');
-  };
-
-  const deleteCategory = async (id: string) => {
-    await deleteDoc(doc(db, 'categories', id));
-  };
-
-  const updateConfig = async (newConfig: AppConfig) => {
-    await setDoc(doc(db, 'config', 'main'), newConfig);
-    setConfig(newConfig); // Optimistic update
-    showNotification('Configuración guardada', 'success');
-  };
-
-  // --- BULK OPERATIONS ---
-  const clearSalesHistory = async () => {
-    showNotification('Contacte soporte para borrado masivo en nube', 'warning');
-  };
-
-  const clearExpensesHistory = async () => {
-     showNotification('Contacte soporte para borrado masivo en nube', 'warning');
-  };
-
-  const resetSystem = async () => {
-     showNotification('Reinicio de fábrica deshabilitado en producción', 'warning');
+  
+  const resetSystem = async () => { 
+      if (isDemo) {
+          localStorage.clear();
+          window.location.reload();
+          return;
+      }
+      showNotification('Reinicio de fábrica deshabilitado en producción', 'warning'); 
   };
 
   return (
     <DataContext.Provider value={{
-      user, loading, login: () => {}, logout,
+      user, loading, login: () => {}, loginDemo, logout,
       products, categories, sales, clients, suppliers, expenses, config, notifications,
-      addProduct, updateProduct, deleteProduct, 
-      addSale, 
+      addProduct, updateProduct, deleteProduct, addSale, 
       addClient, updateClient, deleteClient, registerClientPayment,
-      addSupplier, updateSupplier, deleteSupplier,
-      addExpense, deleteExpense,
-      addCategory, deleteCategory,
-      updateConfig, resetSystem, clearSalesHistory, clearExpensesHistory,
+      addSupplier, updateSupplier, deleteSupplier, addExpense, deleteExpense,
+      addCategory, deleteCategory, updateConfig, resetSystem, clearSalesHistory, clearExpensesHistory,
       showNotification, clearNotifications
     }}>
       {children}
@@ -400,8 +610,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
 export const useData = () => {
   const context = useContext(DataContext);
-  if (context === undefined) {
-    throw new Error('useData must be used within a DataProvider');
-  }
+  if (context === undefined) throw new Error('useData must be used within a DataProvider');
   return context;
 };
