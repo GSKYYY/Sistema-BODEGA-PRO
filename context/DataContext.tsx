@@ -29,7 +29,8 @@ interface DataContextType {
   
   // Actions
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
-  bulkAddProducts: (products: Omit<Product, 'id'>[]) => Promise<{ added: number; errors: number }>;
+  // Updated signature for smart import
+  bulkAddProducts: (products: any[]) => Promise<{ added: number; updated: number; errors: number }>;
   updateProduct: (product: Product) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
   
@@ -60,6 +61,14 @@ interface DataContextType {
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
+
+export const useData = () => {
+  const context = useContext(DataContext);
+  if (!context) {
+    throw new Error('useData must be used within a DataProvider');
+  }
+  return context;
+};
 
 const INITIAL_CONFIG: AppConfig = {
   businessName: 'Mi Negocio',
@@ -150,7 +159,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   // 1. Auth Listener
   useEffect(() => {
-    // If Auth is mock/broken, fallback to local demo user check
     if (!isAuthAvailable) {
         console.warn("Auth service unavailable, checking local storage for session.");
         const demoUser = localStorage.getItem('bodega_demo_user');
@@ -165,7 +173,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Real Firebase User
         let userData: any = null;
         try {
             if (isFirebaseAvailable) {
@@ -184,7 +191,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           isAuthenticated: true
         });
       } else {
-        // Check for Demo User persistence
         const demoUser = localStorage.getItem('bodega_demo_user');
         if (demoUser) {
             setUser(JSON.parse(demoUser));
@@ -202,7 +208,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     if (!user) return;
 
     if (isDemo) {
-        // --- LOAD DEMO DATA FROM LOCALSTORAGE ---
         setProducts(localProducts.read());
         setCategories(localCategories.read());
         setSales(localSales.read());
@@ -213,13 +218,11 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return; 
     }
 
-    // Guard: If Firebase DB is mock/broken, stop here to avoid crash
     if (!isFirebaseAvailable) {
         showNotification("Conexión a Base de Datos no disponible", "error");
         return;
     }
 
-    // --- FIREBASE LISTENERS ---
     const unsubProducts = onSnapshot(collection(db, 'products'), (snap) => {
       setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Product)));
     }, (e) => console.log("Offline/Cache Mode for Products"));
@@ -301,7 +304,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return () => clearTimeout(timer);
   }, [products, clients, user, loading]);
 
-
   const clearNotifications = () => setNotifications([]);
   
   const logout = async () => { 
@@ -339,49 +341,109 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     catch (e) { showNotification('Error guardando', 'error'); }
   };
 
-  const bulkAddProducts = async (newProducts: Omit<Product, 'id'>[]) => {
+  // --- SMART BULK IMPORT LOGIC ---
+  const bulkAddProducts = async (importData: any[]) => {
+    let addedCount = 0;
+    let updatedCount = 0;
+
     if (isDemo) {
+        // Simple demo logic
         const timestamp = Date.now();
-        const modeledProducts = newProducts.map((p, idx) => ({ ...p, id: `local-import-${timestamp}-${idx}` }));
+        const modeledProducts = importData.map((p, idx) => ({ 
+            ...p, 
+            id: `local-import-${timestamp}-${idx}`,
+            // In demo, we just assign the raw string as ID for simplicity if cat doesn't exist
+            categoryId: categories.find(c => c.name.toLowerCase() === p.categoryName?.toLowerCase())?.id || '1' 
+        }));
         const updatedList = [...products, ...modeledProducts];
         setProducts(updatedList);
         localProducts.write(updatedList);
-        showNotification(`${newProducts.length} productos importados (Local)`, 'success');
-        return { added: newProducts.length, errors: 0 };
+        showNotification(`${importData.length} productos importados (Local)`, 'success');
+        return { added: importData.length, updated: 0, errors: 0 };
     }
 
     if (!isFirebaseAvailable) { 
         showNotification('Error: Sin conexión', 'error'); 
-        return { added: 0, errors: newProducts.length };
+        return { added: 0, updated: 0, errors: importData.length };
     }
 
-    // High Performance Batch Write
-    // Firestore limits: 500 writes per batch
-    const BATCH_SIZE = 450; // Safe margin
-    const chunks = [];
-    
-    for (let i = 0; i < newProducts.length; i += BATCH_SIZE) {
-        chunks.push(newProducts.slice(i, i + BATCH_SIZE));
-    }
-
-    let totalAdded = 0;
-    
     try {
-        await Promise.all(chunks.map(async (chunk) => {
-            const batch = writeBatch(db);
-            chunk.forEach(prod => {
+        const batchSize = 450; // Firestore limit 500
+        let batch = writeBatch(db);
+        let opCount = 0;
+
+        // 1. Prepare Indexes for existing data
+        const productMap = new Map(products.map(p => [p.code.toLowerCase(), p.id]));
+        const categoryMap = new Map(categories.map(c => [c.name.toLowerCase(), c.id]));
+
+        // 2. Identify and Create New Categories first
+        const distinctCategories = new Set(importData.map(d => d.categoryName).filter(Boolean));
+        
+        for (const catName of distinctCategories) {
+            const normalized = String(catName).toLowerCase();
+            if (!categoryMap.has(normalized)) {
+                const newCatRef = doc(collection(db, 'categories'));
+                batch.set(newCatRef, {
+                    name: catName,
+                    color: '#' + Math.floor(Math.random()*16777215).toString(16)
+                });
+                categoryMap.set(normalized, newCatRef.id);
+                opCount++;
+            }
+        }
+
+        // 3. Process Products
+        for (const item of importData) {
+            // Commit batch if getting full
+            if (opCount >= batchSize) {
+                await batch.commit();
+                batch = writeBatch(db);
+                opCount = 0;
+            }
+
+            const catId = categoryMap.get(String(item.categoryName).toLowerCase()) || categories[0]?.id || '';
+            
+            // Clean object for Firestore
+            const productData = {
+                code: item.code,
+                name: item.name,
+                salePrice: Number(item.salePrice),
+                costPrice: Number(item.costPrice),
+                stock: Number(item.stock),
+                minStock: Number(item.minStock || 5),
+                unit: item.unit || 'und',
+                status: 'active',
+                categoryId: catId
+            };
+
+            const existingId = productMap.get(String(item.code).toLowerCase());
+
+            if (existingId) {
+                // UPDATE existing
+                const ref = doc(db, 'products', existingId);
+                batch.update(ref, productData);
+                updatedCount++;
+            } else {
+                // CREATE new
                 const ref = doc(collection(db, 'products'));
-                batch.set(ref, prod);
-            });
+                batch.set(ref, productData);
+                addedCount++;
+            }
+            opCount++;
+        }
+
+        // Commit remaining
+        if (opCount > 0) {
             await batch.commit();
-            totalAdded += chunk.length;
-        }));
-        showNotification(`${totalAdded} productos importados correctamente`, 'success');
-        return { added: totalAdded, errors: 0 };
+        }
+
+        showNotification(`Importación: ${addedCount} nuevos, ${updatedCount} actualizados`, 'success');
+        return { added: addedCount, updated: updatedCount, errors: 0 };
+
     } catch (e) {
         console.error(e);
-        showNotification('Error durante la importación masiva', 'error');
-        return { added: totalAdded, errors: newProducts.length - totalAdded };
+        showNotification('Error crítico en importación masiva', 'error');
+        return { added: 0, updated: 0, errors: importData.length };
     }
   };
 
@@ -411,6 +473,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     catch (e) { showNotification('Error eliminando', 'error'); }
   };
 
+  // ... (Remaining methods: addSale, addClient, etc. stay the same)
   const addSale = async (sale: Omit<Sale, 'id'>) => {
     if (isDemo) {
         // ... (Demo logic remains same)
@@ -688,10 +751,4 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       {children}
     </DataContext.Provider>
   );
-};
-
-export const useData = () => {
-  const context = useContext(DataContext);
-  if (context === undefined) throw new Error('useData must be used within a DataProvider');
-  return context;
 };

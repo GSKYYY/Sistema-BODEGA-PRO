@@ -12,15 +12,6 @@ interface ProductImporterProps {
 
 type ImportStage = 'upload' | 'mapping' | 'processing' | 'result';
 
-interface MappedData {
-    name: string;
-    salePrice: number;
-    costPrice: number;
-    stock: number;
-    code: string;
-    category: string;
-}
-
 export const ProductImporter: React.FC<ProductImporterProps> = ({ onClose, onSuccess }) => {
   const { bulkAddProducts, categories } = useData();
   const [stage, setStage] = useState<ImportStage>('upload');
@@ -39,7 +30,7 @@ export const ProductImporter: React.FC<ProductImporterProps> = ({ onClose, onSuc
   });
 
   const [progress, setProgress] = useState(0);
-  const [resultStats, setResultStats] = useState({ added: 0, errors: 0 });
+  const [resultStats, setResultStats] = useState({ added: 0, updated: 0, errors: 0 });
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -91,8 +82,7 @@ export const ProductImporter: React.FC<ProductImporterProps> = ({ onClose, onSuc
       setStage('processing');
       setProgress(10);
 
-      const productsToUpload: Omit<Product, 'id'>[] = [];
-      const defaultCategoryId = categories.length > 0 ? categories[0].id : '';
+      const productsToUpload: any[] = [];
 
       // Processing Loop
       rawData.forEach((row: any) => {
@@ -113,45 +103,39 @@ export const ProductImporter: React.FC<ProductImporterProps> = ({ onClose, onSuc
           let code = rowObj[mapping.code] ? String(rowObj[mapping.code]) : '';
           if (!code) code = 'IMP-' + Math.floor(Math.random() * 1000000);
 
-          // Category matching logic
-          let categoryId = defaultCategoryId;
+          // Get raw category name string to send to context
           const categoryNameInFile = rowObj[mapping.category];
-          if (categoryNameInFile) {
-              const matchedCat = categories.find(c => c.name.toLowerCase() === String(categoryNameInFile).toLowerCase());
-              if (matchedCat) categoryId = matchedCat.id;
-          }
 
           productsToUpload.push({
               name: String(name).trim(),
-              code: code,
+              code: String(code).trim(),
               salePrice: Math.abs(salePrice),
               costPrice: Math.abs(costPrice),
               stock: stock,
               minStock: 5,
-              categoryId: categoryId,
+              categoryName: categoryNameInFile ? String(categoryNameInFile).trim() : 'General', // Send name, not ID
               unit: 'und',
-              status: 'active'
           });
       });
 
-      setProgress(50);
+      setProgress(40);
       
-      // Upload in batch via Context
       if (productsToUpload.length === 0) {
-          setResultStats({ added: 0, errors: 0 });
+          setResultStats({ added: 0, updated: 0, errors: 0 });
           setStage('result');
           return;
       }
 
+      // Upload in batch via Context which handles category creation and dupes
       const result = await bulkAddProducts(productsToUpload);
       
       setProgress(100);
       setResultStats(result);
-      setTimeout(() => setStage('result'), 500);
+      setTimeout(() => setStage('result'), 800);
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
         <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
             {/* Header */}
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
@@ -175,7 +159,7 @@ export const ProductImporter: React.FC<ProductImporterProps> = ({ onClose, onSuc
                             <UploadCloud size={32} className="text-blue-500" />
                         </div>
                         <p className="text-gray-600 font-medium">Haz clic para seleccionar archivo</p>
-                        <p className="text-xs text-gray-400 mt-2">Soporta hasta 5,000 filas</p>
+                        <p className="text-xs text-gray-400 mt-2">Soporta Excel (.xlsx) y CSV</p>
                     </div>
                 )}
 
@@ -185,7 +169,7 @@ export const ProductImporter: React.FC<ProductImporterProps> = ({ onClose, onSuc
                             <AlertTriangle className="text-blue-500 shrink-0 mt-0.5" size={18} />
                             <div className="text-sm text-blue-800">
                                 <p className="font-bold">Mapeo de Columnas</p>
-                                <p>El sistema intentó detectar las columnas automáticamente. Por favor verifica que coincidan.</p>
+                                <p>Verifica que los campos coincidan con tu Excel. Si el código de barras ya existe, se actualizará el producto.</p>
                             </div>
                         </div>
 
@@ -195,8 +179,8 @@ export const ProductImporter: React.FC<ProductImporterProps> = ({ onClose, onSuc
                                 { key: 'salePrice', label: 'Precio Venta', req: true },
                                 { key: 'costPrice', label: 'Costo (Opcional)', req: false },
                                 { key: 'stock', label: 'Stock Inicial', req: false },
-                                { key: 'code', label: 'Código (Opcional)', req: false },
-                                { key: 'category', label: 'Categoría (Opcional)', req: false },
+                                { key: 'code', label: 'Código (Para actualizar)', req: false },
+                                { key: 'category', label: 'Categoría (Auto-crear)', req: false },
                             ].map(field => (
                                 <div key={field.key} className="bg-gray-50 p-3 rounded-lg border border-gray-100">
                                     <label className="text-xs font-bold text-gray-500 uppercase block mb-2">
@@ -233,8 +217,8 @@ export const ProductImporter: React.FC<ProductImporterProps> = ({ onClose, onSuc
                             </div>
                         </div>
                         <div className="text-center">
-                            <h4 className="text-lg font-bold text-gray-800">Procesando Inventario...</h4>
-                            <p className="text-gray-500 text-sm">Optimizando base de datos</p>
+                            <h4 className="text-lg font-bold text-gray-800">Sincronizando Inventario...</h4>
+                            <p className="text-gray-500 text-sm">Creando categorías y actualizando productos</p>
                         </div>
                     </div>
                 )}
@@ -245,19 +229,21 @@ export const ProductImporter: React.FC<ProductImporterProps> = ({ onClose, onSuc
                             <Check size={48} />
                         </div>
                         <div>
-                            <h3 className="text-2xl font-bold text-gray-800">¡Importación Exitosa!</h3>
-                            <p className="text-gray-500">El inventario se ha actualizado.</p>
+                            <h3 className="text-2xl font-bold text-gray-800">¡Sincronización Completada!</h3>
                         </div>
-                        <div className="flex justify-center gap-8">
-                            <div className="text-center">
-                                <span className="block text-3xl font-bold text-gray-800">{resultStats.added}</span>
-                                <span className="text-sm text-gray-500">Agregados</span>
+                        <div className="flex justify-center gap-6">
+                            <div className="text-center bg-blue-50 p-4 rounded-xl min-w-[100px]">
+                                <span className="block text-2xl font-bold text-blue-600">{resultStats.added}</span>
+                                <span className="text-xs text-blue-800 uppercase font-bold">Nuevos</span>
                             </div>
-                            <div className="text-center">
-                                <span className="block text-3xl font-bold text-red-500">{resultStats.errors}</span>
-                                <span className="text-sm text-gray-500">Errores/Omitidos</span>
+                            <div className="text-center bg-green-50 p-4 rounded-xl min-w-[100px]">
+                                <span className="block text-2xl font-bold text-green-600">{resultStats.updated}</span>
+                                <span className="text-xs text-green-800 uppercase font-bold">Actualizados</span>
                             </div>
                         </div>
+                        {resultStats.errors > 0 && (
+                            <p className="text-sm text-red-500">Se omitieron {resultStats.errors} filas por falta de datos.</p>
+                        )}
                     </div>
                 )}
             </div>
@@ -275,7 +261,7 @@ export const ProductImporter: React.FC<ProductImporterProps> = ({ onClose, onSuc
                             disabled={!mapping.name || !mapping.salePrice}
                             className="px-6 py-2 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 shadow-lg shadow-green-200 flex items-center gap-2 disabled:bg-gray-400 disabled:shadow-none transition-all"
                         >
-                            Comenzar Importación <ArrowRight size={18} />
+                            Sincronizar <ArrowRight size={18} />
                         </button>
                     </>
                 )}

@@ -22,6 +22,12 @@ const LATAM_CURRENCIES = [
     { code: 'BOB', name: 'Boliviano', symbol: 'Bs', country: 'Bolivia' },
 ];
 
+const COMMON_CATEGORIES = [
+    "Alimentos", "Bebidas", "Licores", "Limpieza", "Higiene Personal", 
+    "Snacks y Golosinas", "Charcutería", "Carnicería", "Frutas y Verduras", 
+    "Panadería", "Farmacia", "Mascotas", "Papelería", "Hogar", "Cigarrillos", "Varios"
+];
+
 export const Settings: React.FC = () => {
   const { config, updateConfig, categories, addCategory, deleteCategory, resetSystem, clearSalesHistory, clearExpensesHistory, user, products, sales, clients, suppliers, expenses } = useData();
   const navigate = useNavigate();
@@ -418,14 +424,20 @@ export const Settings: React.FC = () => {
                         <Tag size={20}/> Gestión de Categorías
                     </h2>
                     
-                    <div className="flex gap-2 mb-6 max-w-md">
+                    <div className="flex gap-2 mb-6 max-w-md relative">
                         <input 
                             type="text" 
-                            placeholder="Nombre de nueva categoría..." 
-                            className="flex-1 p-2 border rounded-lg"
+                            list="category-suggestions"
+                            placeholder="Nombre o selecciona de la lista..." 
+                            className="flex-1 p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
                             value={newCategoryName}
                             onChange={(e) => setNewCategoryName(e.target.value)}
                         />
+                        <datalist id="category-suggestions">
+                            {COMMON_CATEGORIES.map(cat => (
+                                <option key={cat} value={cat} />
+                            ))}
+                        </datalist>
                         <button 
                             onClick={handleAddCategory}
                             className="bg-green-600 text-white p-2 rounded-lg hover:bg-green-700"
