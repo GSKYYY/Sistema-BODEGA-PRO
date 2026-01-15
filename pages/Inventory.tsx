@@ -2,12 +2,14 @@
 import React, { useState } from 'react';
 import { useData } from '../context/DataContext';
 import { Product } from '../types';
-import { Search, Plus, Edit, Trash2, X, Printer, Calculator, ArrowRight } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, X, Printer, Calculator, ArrowRight, UploadCloud } from 'lucide-react';
+import { ProductImporter } from '../components/ProductImporter';
 
 export const Inventory: React.FC = () => {
   const { products, categories, addProduct, updateProduct, deleteProduct, config, user } = useData();
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   // Calculator State
@@ -111,7 +113,7 @@ export const Inventory: React.FC = () => {
         <div className="mt-4 border-b border-gray-300"></div>
       </div>
 
-      <div className="flex justify-between items-center mb-8 no-print">
+      <div className="flex justify-between items-center mb-8 no-print flex-wrap gap-4">
         <div>
             <h1 className="text-2xl font-bold text-gray-800">Inventario</h1>
             <p className="text-gray-500">Gestión de productos y existencias</p>
@@ -124,14 +126,24 @@ export const Inventory: React.FC = () => {
             <Printer size={20} />
             Imprimir
             </button>
+            
             {canEdit && (
+                <>
                 <button 
-                onClick={() => { setEditingProduct(null); setFormData(initialFormState); setIsModalOpen(true); setShowCalculator(false); }}
-                className={`${getButtonClass()} text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm`}
+                    onClick={() => setIsImportOpen(true)}
+                    className="bg-green-100 text-green-700 px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-green-200 transition-colors shadow-sm font-medium"
                 >
-                <Plus size={20} />
-                Nuevo Producto
+                    <UploadCloud size={20} />
+                    Importar
                 </button>
+                <button 
+                    onClick={() => { setEditingProduct(null); setFormData(initialFormState); setIsModalOpen(true); setShowCalculator(false); }}
+                    className={`${getButtonClass()} text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm font-medium`}
+                >
+                    <Plus size={20} />
+                    Nuevo Producto
+                </button>
+                </>
             )}
         </div>
       </div>
@@ -193,10 +205,26 @@ export const Inventory: React.FC = () => {
                   </tr>
                 );
               })}
+              {filteredProducts.length === 0 && (
+                  <tr>
+                      <td colSpan={7} className="p-8 text-center text-gray-400">
+                          <p>No se encontraron productos.</p>
+                          {canEdit && <p className="text-sm mt-2 text-blue-500 cursor-pointer" onClick={() => setIsImportOpen(true)}>Intente importar desde Excel</p>}
+                      </td>
+                  </tr>
+              )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* Product Importer Modal */}
+      {isImportOpen && (
+          <ProductImporter 
+            onClose={() => setIsImportOpen(false)} 
+            onSuccess={() => { setIsImportOpen(false); setSearch(''); }} 
+          />
+      )}
 
       {/* Product Modal (Hidden on Print) */}
       {isModalOpen && (

@@ -15,7 +15,8 @@
     "react-dom": "^19.2.1",
     "react-router-dom": "^7.10.1",
     "firebase": "^12.6.0",
-    "decimal.js": "^10.6.0"
+    "decimal.js": "^10.6.0",
+    "xlsx": "latest"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

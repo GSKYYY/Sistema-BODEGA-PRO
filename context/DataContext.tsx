@@ -6,7 +6,7 @@ import {
 import { db, auth } from '../firebaseConfig';
 import { 
   collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, 
-  setDoc, runTransaction, query, orderBy, getDoc 
+  setDoc, runTransaction, query, orderBy, getDoc, writeBatch 
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { MathUtils } from '../utils/math';
@@ -29,6 +29,7 @@ interface DataContextType {
   
   // Actions
   addProduct: (product: Omit<Product, 'id'>) => Promise<void>;
+  bulkAddProducts: (products: Omit<Product, 'id'>[]) => Promise<{ added: number; errors: number }>;
   updateProduct: (product: Product) => Promise<void>;
   deleteProduct: (id: string) => Promise<void>;
   
@@ -144,16 +145,33 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   };
 
   const isDemo = user?.uid.startsWith('demo-');
+  const isFirebaseAvailable = db && !(db as any)._isMock;
+  const isAuthAvailable = auth && !(auth as any)._isMock;
 
   // 1. Auth Listener
   useEffect(() => {
+    // If Auth is mock/broken, fallback to local demo user check
+    if (!isAuthAvailable) {
+        console.warn("Auth service unavailable, checking local storage for session.");
+        const demoUser = localStorage.getItem('bodega_demo_user');
+        if (demoUser) {
+            setUser(JSON.parse(demoUser));
+        } else {
+            setUser(null);
+        }
+        setLoading(false);
+        return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         // Real Firebase User
         let userData: any = null;
         try {
-            const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-            userData = userDoc.exists() ? userDoc.data() : null;
+            if (isFirebaseAvailable) {
+                const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+                userData = userDoc.exists() ? userDoc.data() : null;
+            }
         } catch (e) {
             console.warn("Failed to fetch user data", e);
         }
@@ -177,7 +195,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setLoading(false);
     });
     return unsubscribe;
-  }, []);
+  }, [isAuthAvailable, isFirebaseAvailable]);
 
   // 2. Data Synchronization (Firebase vs LocalStorage)
   useEffect(() => {
@@ -192,7 +210,13 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setSuppliers(localSuppliers.read());
         setExpenses(localExpenses.read());
         setConfig(localConfig.read());
-        return; // Stop execution, don't set up Firestore listeners
+        return; 
+    }
+
+    // Guard: If Firebase DB is mock/broken, stop here to avoid crash
+    if (!isFirebaseAvailable) {
+        showNotification("Conexión a Base de Datos no disponible", "error");
+        return;
     }
 
     // --- FIREBASE LISTENERS ---
@@ -256,7 +280,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       unsubProducts(); unsubCategories(); unsubSales(); unsubClients();
       unsubSuppliers(); unsubExpenses(); unsubConfig();
     };
-  }, [user?.uid, isDemo]); // Re-run if user ID changes or mode changes
+  }, [user?.uid, isDemo, isFirebaseAvailable]);
 
   // 3. Alerts
   useEffect(() => {
@@ -281,7 +305,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const clearNotifications = () => setNotifications([]);
   
   const logout = async () => { 
-      try { await signOut(auth); } catch (e) {}
+      try { if (isAuthAvailable) await signOut(auth); } catch (e) {}
       localStorage.removeItem('bodega_demo_user');
       setUser(null); 
   };
@@ -299,7 +323,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       showNotification('Modo Demo Activado (Datos Locales)', 'success');
   };
 
-  // --- CRUD ACTIONS (Unified for Local/Cloud) ---
+  // --- CRUD ACTIONS ---
 
   const addProduct = async (productData: Omit<Product, 'id'>) => {
     if (isDemo) {
@@ -310,8 +334,55 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         showNotification('Producto guardado', 'success');
         return;
     }
+    if (!isFirebaseAvailable) { showNotification('Error: Sin conexión', 'error'); return; }
     try { await addDoc(collection(db, 'products'), productData); showNotification('Producto guardado', 'success'); } 
     catch (e) { showNotification('Error guardando', 'error'); }
+  };
+
+  const bulkAddProducts = async (newProducts: Omit<Product, 'id'>[]) => {
+    if (isDemo) {
+        const timestamp = Date.now();
+        const modeledProducts = newProducts.map((p, idx) => ({ ...p, id: `local-import-${timestamp}-${idx}` }));
+        const updatedList = [...products, ...modeledProducts];
+        setProducts(updatedList);
+        localProducts.write(updatedList);
+        showNotification(`${newProducts.length} productos importados (Local)`, 'success');
+        return { added: newProducts.length, errors: 0 };
+    }
+
+    if (!isFirebaseAvailable) { 
+        showNotification('Error: Sin conexión', 'error'); 
+        return { added: 0, errors: newProducts.length };
+    }
+
+    // High Performance Batch Write
+    // Firestore limits: 500 writes per batch
+    const BATCH_SIZE = 450; // Safe margin
+    const chunks = [];
+    
+    for (let i = 0; i < newProducts.length; i += BATCH_SIZE) {
+        chunks.push(newProducts.slice(i, i + BATCH_SIZE));
+    }
+
+    let totalAdded = 0;
+    
+    try {
+        await Promise.all(chunks.map(async (chunk) => {
+            const batch = writeBatch(db);
+            chunk.forEach(prod => {
+                const ref = doc(collection(db, 'products'));
+                batch.set(ref, prod);
+            });
+            await batch.commit();
+            totalAdded += chunk.length;
+        }));
+        showNotification(`${totalAdded} productos importados correctamente`, 'success');
+        return { added: totalAdded, errors: 0 };
+    } catch (e) {
+        console.error(e);
+        showNotification('Error durante la importación masiva', 'error');
+        return { added: totalAdded, errors: newProducts.length - totalAdded };
+    }
   };
 
   const updateProduct = async (product: Product) => {
@@ -322,6 +393,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         showNotification('Producto actualizado', 'success');
         return;
     }
+    if (!isFirebaseAvailable) return;
     try { await updateDoc(doc(db, 'products', product.id), { ...product }); showNotification('Producto actualizado', 'success'); } 
     catch (e) { showNotification('Error actualizando', 'error'); }
   };
@@ -334,13 +406,14 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         showNotification('Producto eliminado', 'info');
         return;
     }
+    if (!isFirebaseAvailable) return;
     try { await deleteDoc(doc(db, 'products', id)); showNotification('Producto eliminado', 'info'); } 
     catch (e) { showNotification('Error eliminando', 'error'); }
   };
 
   const addSale = async (sale: Omit<Sale, 'id'>) => {
     if (isDemo) {
-        // 1. Update Stock Locally
+        // ... (Demo logic remains same)
         const currentProducts = [...products];
         for (const item of sale.items) {
             const prodIndex = currentProducts.findIndex(p => p.id === item.id);
@@ -356,7 +429,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setProducts(currentProducts);
         localProducts.write(currentProducts);
 
-        // 2. Update Client Debt Locally
         if (sale.paymentMethod === 'credit' && sale.clientId) {
             const currentClients = [...clients];
             const clientIndex = currentClients.findIndex(c => c.id === sale.clientId);
@@ -370,17 +442,16 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             }
         }
 
-        // 3. Save Sale
         const newSale = { ...sale, id: 'local-sale-' + Date.now() };
         const newSales = [newSale, ...sales];
         setSales(newSales);
         localSales.write(newSales);
-        
         showNotification(`Venta ${sale.number} registrada`, 'success');
         return;
     }
 
-    // Firebase Transaction
+    if (!isFirebaseAvailable) { showNotification('Error: Sin conexión', 'error'); return; }
+
     try {
       await runTransaction(db, async (transaction) => {
         for (const item of sale.items) {
@@ -393,7 +464,6 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
         const newSaleRef = doc(collection(db, 'sales'));
         const saleData = { ...sale, id: newSaleRef.id };
-        // Remove undefined keys
         (Object.keys(saleData) as (keyof typeof saleData)[]).forEach(key => { if ((saleData as any)[key] === undefined) delete (saleData as any)[key]; });
         transaction.set(newSaleRef, saleData);
         if (sale.paymentMethod === 'credit' && sale.clientId) {
@@ -419,6 +489,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           showNotification('Cliente registrado', 'success');
           return;
       }
+      if (!isFirebaseAvailable) return;
       try { await addDoc(collection(db, 'clients'), client); showNotification('Cliente registrado', 'success'); } catch(e) { showNotification('Error', 'error'); } 
   };
   
@@ -430,6 +501,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           showNotification('Cliente actualizado', 'success');
           return;
       }
+      if (!isFirebaseAvailable) return;
       try { await updateDoc(doc(db, 'clients', client.id), { ...client }); showNotification('Cliente actualizado', 'success'); } catch(e) { showNotification('Error', 'error'); } 
   };
   
@@ -440,6 +512,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           localClients.write(newClients);
           return;
       }
+      if (!isFirebaseAvailable) return;
       try { await deleteDoc(doc(db, 'clients', id)); } catch(e) {} 
   };
 
@@ -458,6 +531,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         }
         return;
     }
+    if (!isFirebaseAvailable) return;
     try {
       await runTransaction(db, async (transaction) => {
         const clientRef = doc(db, 'clients', clientId);
@@ -481,6 +555,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           showNotification('Proveedor registrado', 'success');
           return;
       }
+      if (!isFirebaseAvailable) return;
       try { await addDoc(collection(db, 'suppliers'), supplier); showNotification('Proveedor registrado', 'success'); } catch(e) {} 
   };
   
@@ -491,6 +566,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           localSuppliers.write(newSups);
           return;
       }
+      if (!isFirebaseAvailable) return;
       try { await updateDoc(doc(db, 'suppliers', supplier.id), { ...supplier }); } catch(e) {} 
   };
   
@@ -501,6 +577,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           localSuppliers.write(newSups);
           return;
       }
+      if (!isFirebaseAvailable) return;
       try { await deleteDoc(doc(db, 'suppliers', id)); } catch(e) {} 
   };
   
@@ -513,6 +590,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           showNotification('Gasto registrado', 'success');
           return;
       }
+      if (!isFirebaseAvailable) return;
       try { await addDoc(collection(db, 'expenses'), expense); showNotification('Gasto registrado', 'success'); } catch(e) {} 
   };
   
@@ -523,6 +601,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           localExpenses.write(newExps);
           return;
       }
+      if (!isFirebaseAvailable) return;
       try { await deleteDoc(doc(db, 'expenses', id)); } catch(e) {} 
   };
   
@@ -535,6 +614,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           showNotification('Categoría agregada', 'success');
           return;
       }
+      if (!isFirebaseAvailable) return;
       try { await addDoc(collection(db, 'categories'), category); showNotification('Categoría agregada', 'success'); } catch(e) {} 
   };
   
@@ -545,6 +625,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           localCategories.write(newCats);
           return;
       }
+      if (!isFirebaseAvailable) return;
       try { await deleteDoc(doc(db, 'categories', id)); } catch(e) {} 
   };
   
@@ -555,6 +636,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         showNotification('Configuración guardada (Local)', 'success');
         return;
     }
+    if (!isFirebaseAvailable) return;
     try {
         await setDoc(doc(db, 'config', 'main'), newConfig);
         setConfig(newConfig);
@@ -597,7 +679,7 @@ export const DataProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     <DataContext.Provider value={{
       user, loading, login: () => {}, loginDemo, logout,
       products, categories, sales, clients, suppliers, expenses, config, notifications,
-      addProduct, updateProduct, deleteProduct, addSale, 
+      addProduct, bulkAddProducts, updateProduct, deleteProduct, addSale, 
       addClient, updateClient, deleteClient, registerClientPayment,
       addSupplier, updateSupplier, deleteSupplier, addExpense, deleteExpense,
       addCategory, deleteCategory, updateConfig, resetSystem, clearSalesHistory, clearExpensesHistory,

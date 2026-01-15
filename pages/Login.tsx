@@ -43,6 +43,13 @@ export const Login: React.FC = () => {
     setIsLoading(true);
     setError('');
 
+    // Safe Auth Check
+    if (!auth || (auth as any)._isMock) {
+        setError('Servicio de conexión no disponible. Por favor utilice el Modo Demo.');
+        setIsLoading(false);
+        return;
+    }
+
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
     } catch (err: any) {
